@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     # Use macos-14 for a pinned Xcode 15.x. If GitHub retires it, switch to macos-latest.
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
