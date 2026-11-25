@@ -1,0 +1,70 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    # Use macos-14 for a pinned Xcode 15.x. If GitHub retires it, switch to macos-latest.
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project TDSCarKit.xcodeproj || true
+          ls -l App/TDSCarKit.entitlements
+
+      - name: Build (unsigned, device)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TDSCarKit.xcodeproj \
+            -scheme TDSCarKit \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            TDS_WIFI_ENTITLEMENTS="App/TDSCarKit.entitlements" \
+            build 2>&1 | tee build.log
+
+      - name: Package IPA
+        run: |
+          set -e
+          APP=$(find build/Build/Products -maxdepth 3 -name "TDSCarKit.app" -type d | head -1)
+          test -n "$APP"
+          echo "APP=$APP"
+          BIN=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Info.plist")
+          test -f "$APP/$BIN" || { echo "missing binary $BIN"; exit 1; }
+          echo "binary: $BIN ($(stat -f%z "$APP/$BIN") bytes)"
+          mkdir -p out/Payload
+          cp -R "$APP" out/Payload/
+          cd out
+          zip -qry ../CarWithin-ios16fix-unsigned.ipa Payload
+          cd ..
+          ls -lh CarWithin-ios16fix-unsigned.ipa
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarWithin-ios16fix-unsigned
+          path: CarWithin-ios16fix-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
