@@ -1796,6 +1796,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
 
     private func stop(keepVehicleNavigation: Bool = false) {
+        // Record who asked for the stop. Without this a session that ends while the app is
+        // backgrounded is indistinguishable from a manual stop, a receiver failure or a
+        // Bluetooth failure — all of which route here.
+        log(CWL("CarPlay 停止（keepVehicleNavigation={1}）调用栈：{2}",
+            [String(keepVehicleNavigation),
+             Thread.callStackSymbols.dropFirst(1).prefix(5).joined(separator: " | ")]))
         if !keepVehicleNavigation { stopVehicleProjection() }
         localStartupID = nil
         networkStartupTask?.cancel()
