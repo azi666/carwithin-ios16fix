@@ -50,6 +50,7 @@ jobs:
             EXPANDED_CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             TDS_WIFI_ENTITLEMENTS="App/TDSCarKit.entitlements" \
+            TDS_WIFI_NAME_DETECTION=YES \
             build 2>&1 | tee build.log
 
       - name: Package IPA
