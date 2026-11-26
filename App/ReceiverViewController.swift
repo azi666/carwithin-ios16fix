@@ -1400,8 +1400,10 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         let diagnostic = WiFiCredentials.diagnostic(for: ssid)
         do {
             let saved = try WiFiCredentials.password(for: ssid)
-            log(CWL("Wi-Fi 密码读取：SSID=「{1}」｜{2}｜结果={3}",
-                [ssid, diagnostic, saved.map { CWL("已填入 \($0.count) 个字符") } ?? CWL("未找到已保存的密码")]))
+            let resultText: String
+            if let saved { resultText = CWL("已填入 \(saved.count) 个字符") }
+            else { resultText = CWL("未找到已保存的密码") }
+            log(CWL("Wi-Fi 密码读取：SSID=「{1}」｜{2}｜结果={3}", [ssid, diagnostic, resultText]))
             if let saved {
                 passwordField.text = saved; openNetworkSwitch.isOn = saved.isEmpty
                 passwordStatus.text = WiFiCredentials.isTemporary(for: ssid)
