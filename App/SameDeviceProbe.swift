@@ -55,52 +55,25 @@ final class SameDeviceProbe {
         active = false; generation = UUID(); transport.stop(); transport.onData = nil; parser = IAP2Parser()
         identity = nil; configuration = nil; messageBytes = Data(); sequence = 0x10; acknowledgement = 0
         session = 1; lastPayloadSequence = nil; linked = false; authenticated = false; identified = false; requested = false; controlConnected = false
-        channelCandidates = []; channelIndex = 0
     }
     func didConnectControl() {
         guard active else { return }
         controlConnected = true
         stage(CWL("CarPlay 控制连接已建立，正在协商会话"))
     }
-    /// Channels to try when iOS refuses to connect. The phone compares the advertised channel with
-    /// the network it is actually on and silently ignores a mismatch, so rotating through the
-    /// common values is the only way to find the right one without manual trial and error.
-    private var channelCandidates: [UInt8] = []
-    private var channelIndex = 0
-
-    private func nextChannel(for configuration: ReceiverConfiguration) -> UInt8 {
-        if channelCandidates.isEmpty {
-            var seen = Set<UInt8>()
-            for value in [configuration.wifiChannel, 1, 6, 11, 36, 149, 157] where seen.insert(value).inserted {
-                channelCandidates.append(value)
-            }
-        }
-        let channel = channelCandidates[channelIndex % channelCandidates.count]
-        channelIndex += 1
-        return channel
-    }
-
     private func requestSession(_ configuration: ReceiverConfiguration) throws {
-        // Manual testing: always use the channel configured in the app so the operator can
-        // change one variable at a time (automatic rotation made results hard to attribute).
-        let channel = configuration.wifiChannel
-        let wifi = try AccessoryMessages.WiFi(ssid: configuration.ssid, password: configuration.password, channel: channel)
+        let wifi = try AccessoryMessages.WiFi(ssid: configuration.ssid, password: configuration.password, channel: configuration.wifiChannel)
         // Diagnostic: iOS compares this SSID/channel against the current Wi-Fi and silently
         // refuses to connect the RTSP endpoint when they differ. Log the exact bytes so a
         // trailing space or a wrong channel is visible instead of guessed.
         let ssid = configuration.ssid
         let trimmed = ssid.trimmingCharacters(in: .whitespacesAndNewlines)
         let whitespaceNote = trimmed == ssid ? "" : CWL("（注意：名称首尾含空白字符）")
-        onLog?(CWL("StartSession 公钥：{1} 字符", [String(AirPlayCredentials.currentPublicKey.count)]))
         onLog?(CWL("iAP2 StartSession：SSID=「{1}」{2} UTF-8 字节={3} 信道={4} 地址={5}:{6}",
-            [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: channel),
+            [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: configuration.wifiChannel),
              configuration.address, String(describing: configuration.port)]))
-        // A/B: omit the Wi-Fi credentials entirely. Wireless CarPlay normally expects the
-        // accessory to own the hotspot; a home router is not the accessory, so iOS may reject
-        // the credential block outright. Without it, iOS falls back to same-network discovery.
         try send(AccessoryMessages.startSession(address: configuration.address, port: configuration.port,
-            deviceID: configuration.deviceID, wifi: wifi,
-            publicKey: AirPlayCredentials.currentPublicKey))
+            deviceID: configuration.deviceID, wifi: wifi))
     }
     private func stage(_ message: String) { onLog?(message); onStage?(message) }
     private func finish(_ message: String) { onLog?(message); stop(); onFinished?(message) }
@@ -158,10 +131,8 @@ final class SameDeviceProbe {
             try send(IAP2Message(id: 0xaa03, parameters: [IAP2Parameter(id: 0, value: identity.sign(challenge: challenge))]))
         case 0xaa04: finish(CWL("iOS 拒绝了配件认证（0xAA04）"))
         case 0xaa05: authenticated = true; stage(CWL("iOS 已接受配件认证"))
-        case 0x1d00: try send(AccessoryMessages.identification(name: configuration.name, deviceID: configuration.deviceID, ssid: configuration.ssid))
-        case 0x1d02:
-            identified = true
-            stage(CWL("iOS 已接受配件识别，正在等待 CarPlay 可用通知"))
+        case 0x1d00: try send(AccessoryMessages.identification(name: configuration.name, deviceID: configuration.deviceID))
+        case 0x1d02: identified = true; stage(CWL("iOS 已接受配件识别，正在等待 CarPlay 可用通知"))
         case 0x1d03:
             let rejected = message.parameters.map { String(format: "%04X:%@", $0.id, $0.value.prefix(32).map { String(format: "%02X", $0) }.joined()) }.joined(separator: ",")
             finish(CWL("iOS 拒绝了配件识别（0x1D03）：{1}", [String(describing: rejected)]))
@@ -177,7 +148,7 @@ final class SameDeviceProbe {
             try requestSession(configuration)
             if !requested && expectsLocalControl {
                 let run = generation
-                for delay in [3.0, 6.0, 9.0, 12.0] {
+                for delay in [3.0, 6.0, 9.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         guard let self, self.active, self.generation == run, !self.controlConnected else { return }
                         do { try self.requestSession(configuration) }
