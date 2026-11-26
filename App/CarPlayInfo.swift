@@ -24,8 +24,10 @@ enum CarPlayInfo {
     /// never issue SETUP. 17+ tolerates the omission, so the workaround stays scoped to 16.x
     /// and the audio streams it then offers are answered without a dataPort.
     static var requiresAudioDeclaration: Bool {
-        if #available(iOS 17.0, *) { return false }
-        return true
+        // A/B: declaring audio formats on iOS 16 was meant to unblock media negotiation, but the
+        // 16.4.1 logs show iOS refuses to open the control channel at all while it is on. Keep
+        // the 1.0.4 baseline (no audio declaration) until the real cause is known.
+        return false
     }
 
     /// 30–60 in steps of 5 (round half up), as the iPhone expects for maxFPS.
