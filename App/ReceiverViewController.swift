@@ -571,6 +571,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         ninebotVehicleButton.configuration?.title = CWL("车辆配对")
         ninebotVehicleButton.addAction(UIAction { [weak self] _ in self?.revealSettings(vehicle: true) }, for: .touchUpInside)
         ninebotCard.addArrangedSubview(ninebotVehicleButton)
+        // Route the BLE scanning/pairing/authentication trail into the app log so it can be
+        // diagnosed without guessing from the one-line status label.
+        ninebotVehicle.onLog = { [weak self] in self?.log($0) }
         ninebotVehicleObservation = ninebotVehicle.$status.combineLatest(ninebotVehicle.$garage).sink { [weak self] status, garage in
             self?.ninebotVehicleButton.configuration?.subtitle = garage.selected?.name
             self?.ninebotVehicleStatus.isHidden = garage.selected == nil
