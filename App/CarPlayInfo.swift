@@ -34,6 +34,14 @@ enum CarPlayInfo {
         return ((clamped - 30) + 2) / 5 * 5 + 30
     }
 
+    /// Source version advertised in /info and mDNS. `509.11` is not a version any real receiver
+    /// uses; iOS 18+ appears to gate media negotiation on it, so newer systems get the value a
+    /// real head unit advertises. iOS 16 keeps the value it was verified with.
+    static var sourceVersion: String {
+        if #available(iOS 18.0, *) { return "950.7.1" }
+        return "509.11"
+    }
+
     static func build(_ config: ReceiverConfiguration) -> [String: Any] {
         let area: [String: Any] = ["widthPixels": config.width, "heightPixels": config.height, "originXPixels": 0, "originYPixels": 0]
         var view = area; var safe = area; safe["drawUIOutsideSafeArea"] = true; view["safeArea"] = safe
@@ -63,7 +71,7 @@ enum CarPlayInfo {
         // Keep the capability mask consistent with the audio declaration above: on iOS 16 both
         // must say "audio supported", otherwise the phone sees a contradictory profile and never
         // starts media negotiation. The streams it then offers are answered without a dataPort.
-        var info: [String: Any] = ["sourceVersion": "509.11",
+        var info: [String: Any] = ["sourceVersion": sourceVersion,
             "features": NSNumber(value: features(audio: config.audioEnabled || Self.requiresAudioDeclaration)), "statusFlags": 4,
             "model": "CarWithin1,1", "manufacturer": "CarWithin", "deviceID": config.deviceID,
             "bluetoothIDs": [config.deviceID], "name": config.name, "rightHandDrive": config.rightHandDrive,
