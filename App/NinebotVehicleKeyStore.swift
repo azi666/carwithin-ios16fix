@@ -46,9 +46,14 @@ struct NinebotVehicleKeyStore {
         if status == errSecItemNotFound { return Record() }
         guard status == errSecSuccess else { throw Failure.system(status) }
         guard let data = result as? Data,
-              let record = try? JSONDecoder().decode(Record.self, from: data),
-              [record.confirmedKey, record.pendingKey].allSatisfy({ $0 == nil || $0!.count == 32 || $0!.count == 16 })
+              let record = try? JSONDecoder().decode(Record.self, from: data)
         else { throw Failure.invalidRecord }
+        // Kept out of the guard on purpose: combining these checks with the optional bindings
+        // above exceeds the type checker's budget on Xcode 15 ("unable to type-check this
+        // expression in reasonable time").
+        for key in [record.confirmedKey, record.pendingKey] {
+            if let key, key.count != 32 && key.count != 16 { throw Failure.invalidRecord }
+        }
         return record
     }
 
