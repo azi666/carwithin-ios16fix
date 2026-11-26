@@ -60,6 +60,33 @@ public enum AccessoryMessages {
         if #available(iOS 18.0, *) { return "950.7.1" }
         return "509.11"
     }
+    /// CarPlay feature subscriptions the accessory must request before iOS will bring up the
+    /// session: now playing (0x5000), route guidance (0x5200), power (0xAE00), communications
+    /// (0x4157) and call state (0x4154). Layout mirrors DiPlay's wireless control client, which
+    /// sends exactly these five after authentication.
+    public static func subscriptions() throws -> [IAP2Message] {
+        func void(_ id: UInt16) -> IAP2Parameter { IAP2Parameter(id: id, value: Data()) }
+        func groupValue(_ params: [IAP2Parameter]) throws -> Data {
+            var data = Data()
+            for param in params { data.append(try param.encoded()) }
+            return data
+        }
+        var messages: [IAP2Message] = []
+        messages.append(IAP2Message(id: 0x5000, parameters: [
+            IAP2Parameter(id: 0, value: try groupValue([1, 4, 6, 12, 26].map { void(UInt16($0)) })),
+            IAP2Parameter(id: 1, value: try groupValue([0, 1, 7].map { void(UInt16($0)) }))
+        ]))
+        messages.append(IAP2Message(id: 0x5200, parameters: [
+            IAP2Parameter(id: 0, value: Data([0, 42])), void(1), void(2)
+        ]))
+        messages.append(IAP2Message(id: 0xAE00, parameters: [void(4), void(5), void(6)]))
+        messages.append(IAP2Message(id: 0x4157, parameters: [void(0), void(4), void(5)]))
+        messages.append(IAP2Message(id: 0x4154, parameters: [
+            void(0), void(1), void(2), void(3), void(4), void(11)
+        ]))
+        return messages
+    }
+
     /// Accessory Wi-Fi configuration (0x5703): tells iOS which network this receiver sits on.
     /// Field layout verified against DiPlay's AccessoryWiFiConfigurationInformation endpoint.
     /// BSSID is optional; SSID/passphrase/security/channel are what iOS matches against.
