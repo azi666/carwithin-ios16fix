@@ -299,13 +299,19 @@ final class NativeReceiver {
                         self.log(CWL("收到控制连接"))
                         DispatchQueue.main.async { [weak self] in self?.onControlConnected?() }
                         self.receive(connection, id: id, state: state, configuration: configuration, identity: identity)
-                        // iOS 16 finishes the control handshake and then never asks for media.
-                        // Say so explicitly instead of leaving the UI spinning forever.
+                        // iOS finishes the control handshake and then may never ask for the video stream.
+                        // Report it precisely: "no video frame" is different from "no SETUP".
                         let readyGeneration = self.generation
                         self.queue.asyncAfter(deadline: .now() + 10) { [weak self] in
                             guard let self, self.generation == readyGeneration else { return }
-                            guard !self.sessions.values.contains(where: { $0.media != nil }) else { return }
-                            self.log(CWL("控制连接已建立 10 秒，仍未收到任何媒体 SETUP —— iPhone 停在媒体协商之前"))
+                            let anyMedia = self.sessions.values.contains { $0.media != nil }
+                            let anyVideo = self.sessions.values.contains { ($0.media?.receivedVideoUnits ?? 0) > 0 }
+                            guard !anyVideo else { return }
+                            if anyMedia {
+                                self.log(CWL("控制连接已建立 10 秒，媒体已协商但还没有视频帧 —— iPhone 未请求视频流"))
+                            } else {
+                                self.log(CWL("控制连接已建立 10 秒，仍未收到任何媒体 SETUP —— iPhone 停在媒体协商之前"))
+                            }
                         }
                     case .failed, .cancelled:
                         state.media?.stop(); self.sessions.removeValue(forKey: id); self.connections.removeValue(forKey: id)
