@@ -880,6 +880,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         do {
             try WiFiCredentials.save(password, for: ssid)
             WiFiPresetStore.upsert(ssid: ssid, channel: channel, isOpen: openNetworkSwitch.isOn)
+            log(CWL("Wi-Fi 密码保存：SSID=「{1}」｜{2}", [ssid, WiFiCredentials.diagnostic(for: ssid)]))
             passwordStatus.text = WiFiCredentials.isTemporary(for: ssid)
                 ? WiFiCredentials.temporaryNotice : CWL("已保存 Wi-Fi 预设“{1}”", [String(describing: ssid)])
             refreshWiFiPresetMenu()
@@ -1396,13 +1397,19 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         // Merely revisiting the name field must not overwrite an edited password with Keychain.
         guard passwordLoadedForSSID != ssid else { return }
         passwordLoadedForSSID = ssid
+        let diagnostic = WiFiCredentials.diagnostic(for: ssid)
         do {
-            if let saved = try WiFiCredentials.password(for: ssid) {
+            let saved = try WiFiCredentials.password(for: ssid)
+            log(CWL("Wi-Fi 密码读取：SSID=「{1}」｜{2}｜结果={3}",
+                [ssid, diagnostic, saved.map { CWL("已填入 \($0.count) 个字符") } ?? CWL("未找到已保存的密码")]))
+            if let saved {
                 passwordField.text = saved; openNetworkSwitch.isOn = saved.isEmpty
                 passwordStatus.text = WiFiCredentials.isTemporary(for: ssid)
                     ? WiFiCredentials.temporaryNotice : CWL("已读取保存的 Wi-Fi 配置")
             }
         } catch {
+            log(CWL("Wi-Fi 密码读取异常：SSID=「{1}」｜{2}｜{3}",
+                [ssid, diagnostic, String(describing: error)]))
             if (error as NSError).domain == NSOSStatusErrorDomain,
                (error as NSError).code == Int(errSecMissingEntitlement) {
                 passwordStatus.text = CWL("当前签名无法读取钥匙串（-34018）。请手动输入 Wi-Fi 密码，密码仅在本次 App 运行期间保留。")
@@ -1456,7 +1463,10 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                     return
                 }
                 if self.ssidField.text != network.ssid {
+                    self.log(CWL("自动读取 Wi-Fi 名称：拿到「{1}」，原输入「{2}」", [network.ssid, previousSSID]))
                     self.ssidField.text = network.ssid; self.networkNameChanged(); self.loadWiFiPassword()
+                } else {
+                    self.log(CWL("自动读取 Wi-Fi 名称：与当前输入一致（「{1}」），不重复读取密码", [network.ssid]))
                 }
                 self.refreshNetworkSummary()
                 if requestPermission { self.reloadVisibleSettings() }
