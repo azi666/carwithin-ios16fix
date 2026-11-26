@@ -219,10 +219,19 @@ final class NativeReceiver {
             var pendingReady: (() -> Void)?
             if let airPlayIdentity {
                 let features = CarPlayInfo.features(audio: configuration.audioEnabled)
-                // Advertise the generic AirPlay sink mask in mDNS. CarPlay capabilities are
-                // negotiated in /info, and the iOS 16 mDNS parser rejects the CarPlay-specific
-                // mask that 17+ accepts, finishing pair-verify and then skipping SETUP.
-                let advertised = "0x44540380,0x61"
+                // Version-dependent: iOS 16.4.1 refuses to open the control channel when the
+                // advertised mask is the generic AirPlay sink value (verified: build 1.0.4 with
+                // the CarPlay-specific mask connected, this build with 0x44540380 never did,
+                // across five channels). iOS 18+ instead follows PlayPort/HomePlay, which are
+                // verified working there with the generic mask.
+                let advertised: String
+                if #available(iOS 18.0, *) {
+                    advertised = "0x44540380,0x61"
+                } else {
+                    advertised = String(format: "0x%x,0x%x",
+                                        UInt32(truncatingIfNeeded: features),
+                                        UInt32(truncatingIfNeeded: features >> 32))
+                }
                 self.log(CWL("Bonjour TXT：features={1}（会话能力 0x{2},0x{3} 由 /info 协商）",
                     [advertised, String(features & 0xffff_ffff, radix: 16), String(features >> 32, radix: 16)]))
                 var txt: [String: String] = ["deviceid": configuration.deviceID,
