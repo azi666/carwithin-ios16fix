@@ -21,6 +21,9 @@ final class CarPlayMediaSession {
     private var screen: ScreenStream?
     private var cseq = 0
     private var videoPackets = 0
+    /// Video access units decoded so far. Lets the receiver distinguish "no video yet" from
+    /// "media negotiation never happened at all".
+    var receivedVideoUnits: Int { videoPackets }
     private var videoBytes = 0
     var onLog: ((String) -> Void)?
     var onBrowserAudio: ((Int, AVAudioPCMBuffer, UInt64) -> Void)?
@@ -141,10 +144,15 @@ final class CarPlayMediaSession {
         if let proposed = values["features"] as? [String] {
             onLog?(CWL("iPhone 提议的会话功能：{1}", [String(describing: proposed.joined(separator: ", "))]))
         }
-        // iAPChannel is required by iOS 16 for the CarPlay control channel; without it the
-        // phone finishes pair-verify and then never issues SETUP.
-        var features = hevc ? ["hevc", "viewAreas"] : ["viewAreas"]
-        features.insert("iAPChannel", at: 0)
+        // Echo back only what the iPhone actually proposed and we can honour. Declaring an
+        // extra capability (iAPChannel on iOS 16.1.2, which never offers it) made the phone
+        // skip the video stream entirely after tearing down the audio one.
+        let proposedFeatures = (values["features"] as? [String]) ?? []
+        var features: [String] = []
+        if proposedFeatures.contains("iAPChannel") { features.append("iAPChannel") }
+        if proposedFeatures.contains("viewAreas") { features.append("viewAreas") }
+        if hevc, proposedFeatures.contains("hevc") { features.append("hevc") }
+        if features.isEmpty { features = ["viewAreas"] }
         var response: [String: Any] = ["eventPort": listener.port, "timingPort": timing!.port, "enabledFeatures": features]
         // CarWithin has no dedicated keep-alive listener, and pointing keepAlivePort at the
         // event port would make iOS open a second event stream on it. Log the request instead
