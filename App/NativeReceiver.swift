@@ -227,7 +227,7 @@ final class NativeReceiver {
                     [advertised, String(features & 0xffff_ffff, radix: 16), String(features >> 32, radix: 16)]))
                 var txt: [String: String] = ["deviceid": configuration.deviceID,
                     "features": advertised,
-                    "flags": "0x4", "model": "TDSCarKit1,1", "srcvers": "509.11", "protovers": "1.1",
+                    "flags": "0x4", "model": "TDSCarKit1,1", "srcvers": CarPlayInfo.sourceVersion, "protovers": "1.1",
                     "pi": airPlayIdentity.identifier, "pk": airPlayIdentity.signingKey.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()]
                 // Every real AirPlay 2 receiver advertises vv=2. CarWithin never did, and iOS 18+
                 // appears to require it before opening the RTSP connection — iOS 16 works without
@@ -276,7 +276,7 @@ final class NativeReceiver {
                         // the TXT record right after StartSession and silently drops the media
                         // negotiation when it is not there yet.
                         pendingReady = announce
-                        self.queue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                        self.queue.asyncAfter(deadline: .now() + 5) { [weak self] in
                             guard let self, let pending = pendingReady else { return }
                             pendingReady = nil
                             self.log(CWL("Bonjour 注册超时，先继续启动会话"))
