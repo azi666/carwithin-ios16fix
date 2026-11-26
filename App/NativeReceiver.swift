@@ -189,6 +189,7 @@ final class NativeReceiver {
                                        preferredViewer: preferredViewer, browserAudio: configuration.browserAudio,
                                        airPlayStreamID: configuration.airPlayStreamID, airPlayAddress: configuration.address)
             }
+            AirPlayCredentials.onLog = { [weak self] in self?.log($0) }
             do { self.airPlayIdentity = advertise ? try AirPlayCredentials() : nil }
             catch { self.fail(CWL("AirPlay 身份创建失败：{1}", [String(describing: error.localizedDescription)])); return }
             if configuration.audioEnabled {
@@ -245,6 +246,13 @@ final class NativeReceiver {
                     let dump = txt.keys.sorted().map { "\($0)=\(txt[$0] ?? "")" }.joined(separator: " ")
                     self.log(CWL("Bonjour TXT 全量：{1}", [dump]))
                 }
+                // Identity fingerprint: iOS keys its receiver cache on pi/pk. If these change
+                // between launches, the phone sees a different accessory and silently refuses
+                // to open the control channel.
+                self.log(CWL("AirPlay 身份：pi={1} pk={2}… deviceID={3}",
+                    [airPlayIdentity.identifier,
+                     String(airPlayIdentity.signingKey.publicKey.rawRepresentation.prefix(6).map { String(format: "%02x", $0) }.joined()),
+                     configuration.deviceID]))
                 candidate.service = NWListener.Service(name: configuration.name, type: "_airplay._tcp", txtRecord: NWTXTRecord(txt))
                 candidate.serviceRegistrationUpdateHandler = { [weak self] change in
                     self?.log(CWL("Bonjour 注册状态：{1}", [String(describing: change)]))
