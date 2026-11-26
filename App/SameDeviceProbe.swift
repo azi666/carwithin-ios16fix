@@ -63,6 +63,15 @@ final class SameDeviceProbe {
     }
     private func requestSession(_ configuration: ReceiverConfiguration) throws {
         let wifi = try AccessoryMessages.WiFi(ssid: configuration.ssid, password: configuration.password, channel: configuration.wifiChannel)
+        // Diagnostic: iOS compares this SSID/channel against the current Wi-Fi and silently
+        // refuses to connect the RTSP endpoint when they differ. Log the exact bytes so a
+        // trailing space or a wrong channel is visible instead of guessed.
+        let ssid = configuration.ssid
+        let trimmed = ssid.trimmingCharacters(in: .whitespacesAndNewlines)
+        let whitespaceNote = trimmed == ssid ? "" : CWL("（注意：名称首尾含空白字符）")
+        onLog?(CWL("iAP2 StartSession：SSID=「{1}」{2} UTF-8 字节={3} 信道={4} 地址={5}:{6}",
+            [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: configuration.wifiChannel),
+             configuration.address, String(describing: configuration.port)]))
         try send(AccessoryMessages.startSession(address: configuration.address, port: configuration.port,
             deviceID: configuration.deviceID, wifi: wifi))
     }
