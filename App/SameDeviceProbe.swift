@@ -91,6 +91,7 @@ final class SameDeviceProbe {
         let ssid = configuration.ssid
         let trimmed = ssid.trimmingCharacters(in: .whitespacesAndNewlines)
         let whitespaceNote = trimmed == ssid ? "" : CWL("（注意：名称首尾含空白字符）")
+        onLog?(CWL("StartSession 公钥：{1} 字符", [String(AirPlayCredentials.currentPublicKey.count)]))
         onLog?(CWL("iAP2 StartSession：SSID=「{1}」{2} UTF-8 字节={3} 信道={4} 地址={5}:{6}",
             [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: channel),
              configuration.address, String(describing: configuration.port)]))
