@@ -94,8 +94,11 @@ final class SameDeviceProbe {
         onLog?(CWL("iAP2 StartSession：SSID=「{1}」{2} UTF-8 字节={3} 信道={4} 地址={5}:{6}",
             [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: channel),
              configuration.address, String(describing: configuration.port)]))
+        // A/B: omit the Wi-Fi credentials entirely. Wireless CarPlay normally expects the
+        // accessory to own the hotspot; a home router is not the accessory, so iOS may reject
+        // the credential block outright. Without it, iOS falls back to same-network discovery.
         try send(AccessoryMessages.startSession(address: configuration.address, port: configuration.port,
-            deviceID: configuration.deviceID, wifi: wifi))
+            deviceID: configuration.deviceID, wifi: nil))
     }
     private func stage(_ message: String) { onLog?(message); onStage?(message) }
     private func finish(_ message: String) { onLog?(message); stop(); onFinished?(message) }
