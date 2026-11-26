@@ -225,10 +225,17 @@ final class NativeReceiver {
                 let advertised = "0x44540380,0x61"
                 self.log(CWL("Bonjour TXT：features={1}（会话能力 0x{2},0x{3} 由 /info 协商）",
                     [advertised, String(features & 0xffff_ffff, radix: 16), String(features >> 32, radix: 16)]))
-                let txt: [String: String] = ["deviceid": configuration.deviceID,
+                var txt: [String: String] = ["deviceid": configuration.deviceID,
                     "features": advertised,
                     "flags": "0x4", "model": "TDSCarKit1,1", "srcvers": "509.11", "protovers": "1.1",
                     "pi": airPlayIdentity.identifier, "pk": airPlayIdentity.signingKey.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()]
+                // Every real AirPlay 2 receiver advertises vv=2. CarWithin never did, and iOS 18+
+                // appears to require it before opening the RTSP connection — iOS 16 works without
+                // it, so the field is only added on newer systems to avoid regressing them.
+                if #available(iOS 18.0, *) {
+                    txt["vv"] = "2"
+                    self.log(CWL("Bonjour TXT：额外声明 vv=2（iOS 18+ 兼容）"))
+                }
                 candidate.service = NWListener.Service(name: configuration.name, type: "_airplay._tcp", txtRecord: NWTXTRecord(txt))
                 candidate.serviceRegistrationUpdateHandler = { [weak self] change in
                     self?.log(CWL("Bonjour 注册状态：{1}", [String(describing: change)]))
