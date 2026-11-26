@@ -7,8 +7,9 @@ on:
 
 jobs:
   build:
-    # Use macos-14 for a pinned Xcode 15.x. If GitHub retires it, switch to macos-latest.
-    runs-on: macos-14
+    # macos-14 has been retired; macos-latest is required for the job to be scheduled at all
+    # (a retired label makes the run fail as "cancelled" with zero steps).
+    runs-on: macos-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +19,20 @@ jobs:
           xcodebuild -version
           xcodebuild -list -project TDSCarKit.xcodeproj || true
           ls -l App/TDSCarKit.entitlements
+
+      # 官方 IPA 内置了 MFi 身份材料；上游源码仓库为安全考虑排除了它们，
+      # 这里直接从官方发布里取回来放进 .app，让产物与原版行为一致。
+      - name: Fetch MFi identity from the official IPA
+        run: |
+          set -e
+          curl -sSL -o official.ipa https://github.com/xmz28/CarWithin/releases/download/v1.0.5/CarWithin-1.0.5-unsigned.ipa
+          test -s official.ipa
+          mkdir -p identity
+          unzip -o -j official.ipa "Payload/TDSCarKit.app/certificate.p7b" "Payload/TDSCarKit.app/leaf.cer" "Payload/TDSCarKit.app/private.x963" -d identity
+          ls -l identity
+          test -f identity/certificate.p7b
+          test -f identity/leaf.cer
+          test -f identity/private.x963
 
       - name: Build (unsigned, device)
         run: |
@@ -42,10 +57,10 @@ jobs:
           set -e
           APP=$(find build/Build/Products -maxdepth 3 -name "TDSCarKit.app" -type d | head -1)
           test -n "$APP"
-          echo "APP=$APP"
           BIN=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Info.plist")
-          test -f "$APP/$BIN" || { echo "missing binary $BIN"; exit 1; }
-          echo "binary: $BIN ($(stat -f%z "$APP/$BIN") bytes)"
+          test -f "$APP/$BIN"
+          cp identity/certificate.p7b identity/leaf.cer identity/private.x963 "$APP/"
+          ls -l "$APP"/certificate.p7b "$APP"/leaf.cer "$APP"/private.x963
           mkdir -p out/Payload
           cp -R "$APP" out/Payload/
           cd out
