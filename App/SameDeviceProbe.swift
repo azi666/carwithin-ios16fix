@@ -158,7 +158,7 @@ final class SameDeviceProbe {
             try send(IAP2Message(id: 0xaa03, parameters: [IAP2Parameter(id: 0, value: identity.sign(challenge: challenge))]))
         case 0xaa04: finish(CWL("iOS 拒绝了配件认证（0xAA04）"))
         case 0xaa05: authenticated = true; stage(CWL("iOS 已接受配件认证"))
-        case 0x1d00: try send(AccessoryMessages.identification(name: configuration.name, deviceID: configuration.deviceID))
+        case 0x1d00: try send(AccessoryMessages.identification(name: configuration.name, deviceID: configuration.deviceID, ssid: configuration.ssid))
         case 0x1d02: identified = true; stage(CWL("iOS 已接受配件识别，正在等待 CarPlay 可用通知"))
         case 0x1d03:
             let rejected = message.parameters.map { String(format: "%04X:%@", $0.id, $0.value.prefix(32).map { String(format: "%02X", $0) }.joined()) }.joined(separator: ",")
