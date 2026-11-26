@@ -98,7 +98,8 @@ final class SameDeviceProbe {
         // accessory to own the hotspot; a home router is not the accessory, so iOS may reject
         // the credential block outright. Without it, iOS falls back to same-network discovery.
         try send(AccessoryMessages.startSession(address: configuration.address, port: configuration.port,
-            deviceID: configuration.deviceID, wifi: nil))
+            deviceID: configuration.deviceID, wifi: wifi,
+            publicKey: AirPlayCredentials.currentPublicKey))
     }
     private func stage(_ message: String) { onLog?(message); onStage?(message) }
     private func finish(_ message: String) { onLog?(message); stop(); onFinished?(message) }
