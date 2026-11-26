@@ -36,6 +36,7 @@ jobs:
 
       - name: Build (unsigned, device)
         run: |
+          set +e
           set -o pipefail
           xcodebuild \
             -project TDSCarKit.xcodeproj \
