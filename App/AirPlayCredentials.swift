@@ -164,6 +164,8 @@ final class AirPlayCredentials {
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
+    /// Hex public key of the active receiver identity, published to iAP2 StartSession.
+    private(set) static var currentPublicKey = ""
     let signingKey: Curve25519.Signing.PrivateKey
     let identifier: String
     private func pairingQuery(_ identifier: String) -> [String: Any] {
@@ -210,6 +212,7 @@ final class AirPlayCredentials {
            let key = values["key"] as? Data, let id = values["id"] as? String,
            let parsed = try? Curve25519.Signing.PrivateKey(rawRepresentation: key) {
             signingKey = parsed; identifier = id
+            Self.currentPublicKey = parsed.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()
             return
         }
         // Keychain empty or unreliable: reuse the sandbox copy so the identity stays stable.
@@ -218,12 +221,14 @@ final class AirPlayCredentials {
            let keyData = Data(base64Encoded: encoded),
            let parsed = try? Curve25519.Signing.PrivateKey(rawRepresentation: keyData) {
             signingKey = parsed; identifier = id
+            Self.currentPublicKey = parsed.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()
             Self.persist(keyData, id: id)
             return
         }
         let key = Curve25519.Signing.PrivateKey()
         signingKey = key
         identifier = UUID().uuidString
+        Self.currentPublicKey = key.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()
         Self.persist(key.rawRepresentation, id: identifier)
     }
     /// Set by the receiver so identity persistence failures are visible in the log.
