@@ -71,6 +71,10 @@ jobs:
           BIN=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Info.plist")
           test -f "$APP/$BIN"
           cp identity/certificate.p7b identity/leaf.cer identity/private.x963 "$APP/"
+          # Stamp every build so the on-device "About" screen identifies which binary is running.
+          BUILD_STAMP=$(date +%y%m%d.%H%M)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_STAMP" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist"
           ls -l "$APP"/certificate.p7b "$APP"/leaf.cer "$APP"/private.x963
           # A/B test: ad-hoc signing with a minimal entitlement set may have replaced the
           # entitlements TrollStore normally applies, which can affect CoreAccessories trust
