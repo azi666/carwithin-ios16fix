@@ -229,12 +229,12 @@ final class NativeReceiver {
                     "features": advertised,
                     "flags": "0x4", "model": "TDSCarKit1,1", "srcvers": CarPlayInfo.sourceVersion, "protovers": "1.1",
                     "pi": airPlayIdentity.identifier, "pk": airPlayIdentity.signingKey.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined()]
-                // Every real AirPlay 2 receiver advertises vv=2. CarWithin never did, and iOS 18+
-                // appears to require it before opening the RTSP connection — iOS 16 works without
-                // it, so the field is only added on newer systems to avoid regressing them.
+                // Aligned with PlayPort/HomePlay, which are verified working on iOS 27: they advertise
+                // the plain AirPlay sink mask with protovers 1.1 and no `vv`. Earlier attempts here
+                // added vv=2 / protovers=1.2, which are not used by any known working receiver.
                 if #available(iOS 18.0, *) {
-                    txt["vv"] = "2"
-                    self.log(CWL("Bonjour TXT：额外声明 vv=2（iOS 18+ 兼容）"))
+                    let dump = txt.keys.sorted().map { "\($0)=\(txt[$0] ?? "")" }.joined(separator: " ")
+                    self.log(CWL("Bonjour TXT 全量：{1}", [dump]))
                 }
                 candidate.service = NWListener.Service(name: configuration.name, type: "_airplay._tcp", txtRecord: NWTXTRecord(txt))
                 candidate.serviceRegistrationUpdateHandler = { [weak self] change in
