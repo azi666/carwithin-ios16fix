@@ -21,6 +21,11 @@ final class NinebotUDPSocket: @unchecked Sendable {
             _ = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sendBuffer, socklen_t(MemoryLayout.size(ofValue: sendBuffer)))
             var noSigPipe: Int32 = 1
             _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout.size(ofValue: noSigPipe)))
+            // NinebotOutput.stop() closes asynchronously, so a quick stop→start used to fail with
+            // EADDRINUSE (errno 48) while the previous socket was still bound to 5012/5013.
+            // SO_REUSEADDR lets the new socket take the port immediately.
+            var reuse: Int32 = 1
+            _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout.size(ofValue: reuse)))
 
             var localAddress = try Self.address(ip: localIP, port: localPort)
             let bindResult = withUnsafePointer(to: &localAddress) {
