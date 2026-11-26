@@ -72,11 +72,10 @@ jobs:
           test -f "$APP/$BIN"
           cp identity/certificate.p7b identity/leaf.cer identity/private.x963 "$APP/"
           ls -l "$APP"/certificate.p7b "$APP"/leaf.cer "$APP"/private.x963
-          # Ad-hoc sign so the Wi-Fi entitlement actually reaches the binary. An unsigned
-          # build carries no entitlements at all, which makes NEHotspotNetwork.fetchCurrent
-          # return nil on iOS 16 and the app fall back to "手动填写".
-          codesign -f -s - --entitlements App/TDSCarKit.entitlements "$APP"
-          codesign -d --entitlements - "$APP" 2>&1 | head -20 || true
+          # A/B test: ad-hoc signing with a minimal entitlement set may have replaced the
+          # entitlements TrollStore normally applies, which can affect CoreAccessories trust
+          # on iOS 16.4.1. Leave the payload unsigned so TrollStore applies its own set.
+          echo "skipping codesign (unsigned build, TrollStore signs on install)"
           mkdir -p out/Payload
           cp -R "$APP" out/Payload/
           cd out
