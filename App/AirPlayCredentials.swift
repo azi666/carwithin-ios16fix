@@ -226,11 +226,14 @@ final class AirPlayCredentials {
         identifier = UUID().uuidString
         Self.persist(key.rawRepresentation, id: identifier)
     }
+    /// Set by the receiver so identity persistence failures are visible in the log.
+    static var onLog: ((String) -> Void)?
     private static func persist(_ key: Data, id: String) {
         var map = readMap(identityURL)
         map["key"] = key.base64EncodedString()
         map["id"] = id
-        try? writeMap(map, to: identityURL)
+        do { try writeMap(map, to: identityURL) }
+        catch { onLog?(CWL("AirPlay 身份保存失败：{1}", [String(describing: error)])) }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "local.tds.carkit.airplay", kSecAttrAccount as String: "identity"]
         if let data = try? PropertyListSerialization.data(
