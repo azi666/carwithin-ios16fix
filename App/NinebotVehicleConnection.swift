@@ -509,8 +509,12 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
             guard let self, self.epoch == captured, self.phase == expected,
                   self.wantsSession, !self.disconnecting else { return }
             guard self.outgoing.isEmpty else { self.scheduleHandshakeRetry(for: expected); return }
-            guard self.retries < (expected == .starting ? 4 : 2) else {
-                if expected == .authenticating { self.authenticationFailed(CWL("车辆密钥认证超时。")) }
+            guard self.retries < (expected == .starting ? 4 : 4) else {
+                if expected == .authenticating {
+                    // A timeout here is a link problem, not a rejected key. Reconnect and try
+                    // again instead of retiring the saved key.
+                    self.fail(CWL("车辆密钥认证超时（蓝牙无响应），正在重连。"), retryable: true)
+                }
                 else {
                     let timeout = expected == .starting
                         ? CWL("仪表开启导航确认超时。")
@@ -533,7 +537,10 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
             } catch { self.fail(CWL("蓝牙重试发送失败。"), retryable: true) }
         }
         retryTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + (expected == .starting ? 1 : 3), execute: task)
+        // Give a weak BLE link more room on the authentication step (5 s), and keep the fast
+        // 1 s cadence for the navigation acknowledgement.
+        let delay: TimeInterval = expected == .starting ? 1 : (expected == .authenticating ? 5 : 3)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
     }
 
     private func schedulePairingRetry() {
@@ -596,12 +603,15 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
         disconnecting = false
     }
 
-    private func authenticationFailed(_ reason: String) {
-        if let currentKey { authenticationAttempts.reject(currentKey) }
+    private func authenticationFailed(_ reason: String, rejectKey: Bool = true) {
+        // Only an explicit rejection from the vehicle should retire a saved key. A timeout is
+        // indistinguishable from a BLE dropout, and burning the key there makes a weak link
+        // look like a lost pairing.
+        if rejectKey, let currentKey { authenticationAttempts.reject(currentKey) }
         if !authenticationAttempts.remaining(from: candidateKeys).isEmpty {
             fail(CWL("{1} 将重新握手尝试另一份已保存密钥。", [reason]), retryable: true)
         } else {
-            fail(CWL("{1} 已停止自动重试。可在「车辆配对」重新扫描，或删除旧记录后重新配对。", [reason]), retryable: false)
+            fail(CWL("{1} 已停止自动重试。可在「车辆配对」重新扫描，或删除旧记录后重新配对；仪表迟迟不进投屏时，也可以临时打开九号出行的投屏导航顶上。", [reason]), retryable: false)
         }
     }
 
