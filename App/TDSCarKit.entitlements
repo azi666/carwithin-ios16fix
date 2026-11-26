@@ -4,5 +4,16 @@
 <dict>
 	<key>com.apple.developer.networking.wifi-info</key>
 	<true/>
+	<!-- Keep Keychain access working after ad-hoc signing. TrollStore's ldid signature uses
+	     the TROLLTROLLTROLL team prefix; omitting application-identifier here made the
+	     re-signed app lose its Keychain group, which broke AirPlay identity, the HTTPS
+	     private key and saved Wi-Fi passwords (all -34018). A real (企业/全能签) signature
+	     replaces this whole file with the profile's entitlements, so it stays untouched. -->
+	<key>application-identifier</key>
+	<string>TROLLTROLLTROLL.com.hanlinzhou.SameDeviceCarPlayPoC</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>TROLLTROLLTROLL.com.hanlinzhou.SameDeviceCarPlayPoC</string>
+	</array>
 </dict>
 </plist>
