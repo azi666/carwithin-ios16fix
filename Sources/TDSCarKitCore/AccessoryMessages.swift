@@ -59,6 +59,9 @@ public enum AccessoryMessages {
         // opens the RTSP connection.
         fields += [IAP2Parameter(id: 2, value: portBytes), string(3, deviceID),
                    string(4, publicKey), string(5, sessionSourceVersion)]
+        // Parameter 8 declares mutual authentication support, which DiPlay always sets.
+        // Without it iOS may treat the endpoint as unauthenticated and never dial RTSP.
+        fields.append(IAP2Parameter(id: 8, value: Data([1])))
         return IAP2Message(id: 0x4301, parameters: fields)
     }
 }
