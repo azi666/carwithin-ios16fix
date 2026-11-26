@@ -139,8 +139,8 @@ final class AirPlayCredentials {
                                         kSecAttrService as String: service]
             SecItemDelete(query as CFDictionary)
         }
-        try? FileManager.default.removeItem(at: identityURL)
-        try? FileManager.default.removeItem(at: controllersURL)
+        if let url = identityURL { try? FileManager.default.removeItem(at: url) }
+        if let url = controllersURL { try? FileManager.default.removeItem(at: url) }
     }
 
     // MARK: sandbox mirror
