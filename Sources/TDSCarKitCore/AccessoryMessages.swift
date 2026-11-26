@@ -43,7 +43,8 @@ public enum AccessoryMessages {
         if #available(iOS 18.0, *) { return "950.7.1" }
         return "509.11"
     }
-    public static func startSession(address: String, port: UInt16, deviceID: String, wifi: WiFi? = nil) throws -> IAP2Message {
+    public static func startSession(address: String, port: UInt16, deviceID: String, wifi: WiFi? = nil,
+                                    publicKey: String = "") throws -> IAP2Message {
         // sendCarPlayStartSessionManual calls appendU32TLV for parameter 2.
         let portBytes = Data([0, 0, UInt8(truncatingIfNeeded: port >> 8), UInt8(truncatingIfNeeded: port)])
         var fields = [try group(0, [string(0, address)])]
@@ -53,7 +54,11 @@ public enum AccessoryMessages {
                 IAP2Parameter(id: 2, value: Data([wifi.channel])), string(3, address),
                 IAP2Parameter(id: 4, value: Data([wifi.password.isEmpty ? 0 : 2]))]))
         }
-        fields += [IAP2Parameter(id: 2, value: portBytes), string(3, deviceID), string(4, ""), string(5, sessionSourceVersion)]
+        // Parameter 4 carries the AirPlay receiver public key (hex). DiPlay always sends it;
+        // leaving it empty means iOS has no key to match against the mDNS pk and it never
+        // opens the RTSP connection.
+        fields += [IAP2Parameter(id: 2, value: portBytes), string(3, deviceID),
+                   string(4, publicKey), string(5, sessionSourceVersion)]
         return IAP2Message(id: 0x4301, parameters: fields)
     }
 }
