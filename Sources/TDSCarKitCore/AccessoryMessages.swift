@@ -60,6 +60,20 @@ public enum AccessoryMessages {
         if #available(iOS 18.0, *) { return "950.7.1" }
         return "509.11"
     }
+    /// Accessory Wi-Fi configuration (0x5703): tells iOS which network this receiver sits on.
+    /// Field layout verified against DiPlay's AccessoryWiFiConfigurationInformation endpoint.
+    /// BSSID is optional; SSID/passphrase/security/channel are what iOS matches against.
+    public static func wifiConfiguration(ssid: String, password: String, channel: UInt8,
+                                        security: UInt8, bssid: Data? = nil) -> IAP2Message {
+        var fields: [IAP2Parameter] = []
+        if let bssid, bssid.count == 6 { fields.append(IAP2Parameter(id: 0, value: bssid)) }
+        fields.append(string(1, ssid))
+        if !password.isEmpty { fields.append(string(2, password)) }
+        fields.append(IAP2Parameter(id: 3, value: Data([security])))
+        fields.append(IAP2Parameter(id: 4, value: Data([channel])))
+        return IAP2Message(id: 0x5703, parameters: fields)
+    }
+
     public static func startSession(address: String, port: UInt16, deviceID: String, wifi: WiFi? = nil,
                                     publicKey: String = "") throws -> IAP2Message {
         // sendCarPlayStartSessionManual calls appendU32TLV for parameter 2.
