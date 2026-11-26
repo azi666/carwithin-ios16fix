@@ -43,6 +43,9 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
     private static let notifyID = CBUUID(string: "6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
     private static let garageKey = "ninebot.vehicle.selection"
 
+    /// Mirrors scanning/pairing/authentication progress into the app log so these flows can be
+    /// diagnosed from「诊断与实验 → 日志」instead of only the on-screen status line.
+    var onLog: ((String) -> Void)?
     private var central: CBCentralManager!
     private let defaults: UserDefaults
     private let keyStore = NinebotVehicleKeyStore()
@@ -254,13 +257,17 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
     private func transition(_ next: Phase, _ message: String) {
         phase = next
         status = message
+        onLog?("[车辆] " + message)
     }
 
     private func upsert(_ device: Device) {
         if let index = devices.firstIndex(where: { $0.id == device.id }) {
             if devices[index] != device { devices[index] = device }
         }
-        else if devices.count < 100 { devices.append(device) }
+        else if devices.count < 100 {
+            devices.append(device)
+            onLog?("[车辆] 发现设备：\(device.name)｜\(device.detail)")
+        }
     }
 
     private func connectPeripheral(_ item: CBPeripheral) {
@@ -334,6 +341,10 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
 
     private func handle(_ frame: VehicleBLEFrame) {
         guard frame.dst == 0x3e, !disconnecting else { return }
+        if [0x5b, 0x5c, 0x5d, 0x71].contains(frame.command) {
+            onLog?(String(format: "[车辆] ← 0x%02X idx=0x%02X %d 字节",
+                          Int(frame.command), Int(frame.index), frame.payload.count))
+        }
         if frame.src == 0x23, frame.command == 0x71 {
             if frame.index == 0xff, frame.payload == Data([0]), authenticated, purpose == .projection {
                 handleDashboardExit()
@@ -419,6 +430,11 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
             throw SessionError.message(CWL("当前车辆会话不允许发送该命令。"))
         }
         let plain = try frame.encode()
+        // Only the handshake commands are logged: the navigation stream would flood the log.
+        if [0x5b, 0x5c, 0x5d, 0x71].contains(command) {
+            onLog?(String(format: "[车辆] → 0x%02X idx=0x%02X %d 字节",
+                          Int(command), Int(index), payload.count))
+        }
         let wire = try crypto.encrypt(plain)
         guard outgoing.count < 16, queuedBytes + wire.count <= 4096 else {
             throw SessionError.message(CWL("蓝牙发送队列拥塞。"))
@@ -768,11 +784,13 @@ extension NinebotVehicleConnection: @preconcurrency CBCentralManagerDelegate {
             central.cancelPeripheralConnection(item)
             return
         }
+        onLog?("[车辆] 蓝牙已连接，正在发现服务")
         discover(item)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect item: CBPeripheral, error: Error?) {
         guard isCurrent(item) else { return }
+        onLog?("[车辆] 蓝牙连接失败：\(error?.localizedDescription ?? CWL("未提供原因"))")
         resetAttempt()
         peripheral = nil
         if wantsSession { scheduleReconnect() }
@@ -822,6 +840,7 @@ extension NinebotVehicleConnection: @preconcurrency CBPeripheralDelegate {
         }
         writeCharacteristic = write
         notifyCharacteristic = notify
+        onLog?("[车辆] 蓝牙特征已就绪（写/通知通道可用），开始认证握手")
         if notify.isNotifying { beginPrecommunication() }
         else { item.setNotifyValue(true, for: notify) }
     }
