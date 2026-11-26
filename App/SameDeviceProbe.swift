@@ -55,14 +55,34 @@ final class SameDeviceProbe {
         active = false; generation = UUID(); transport.stop(); transport.onData = nil; parser = IAP2Parser()
         identity = nil; configuration = nil; messageBytes = Data(); sequence = 0x10; acknowledgement = 0
         session = 1; lastPayloadSequence = nil; linked = false; authenticated = false; identified = false; requested = false; controlConnected = false
+        channelCandidates = []; channelIndex = 0
     }
     func didConnectControl() {
         guard active else { return }
         controlConnected = true
         stage(CWL("CarPlay 控制连接已建立，正在协商会话"))
     }
+    /// Channels to try when iOS refuses to connect. The phone compares the advertised channel with
+    /// the network it is actually on and silently ignores a mismatch, so rotating through the
+    /// common values is the only way to find the right one without manual trial and error.
+    private var channelCandidates: [UInt8] = []
+    private var channelIndex = 0
+
+    private func nextChannel(for configuration: ReceiverConfiguration) -> UInt8 {
+        if channelCandidates.isEmpty {
+            var seen = Set<UInt8>()
+            for value in [configuration.wifiChannel, 1, 6, 11, 36, 149, 157] where seen.insert(value).inserted {
+                channelCandidates.append(value)
+            }
+        }
+        let channel = channelCandidates[channelIndex % channelCandidates.count]
+        channelIndex += 1
+        return channel
+    }
+
     private func requestSession(_ configuration: ReceiverConfiguration) throws {
-        let wifi = try AccessoryMessages.WiFi(ssid: configuration.ssid, password: configuration.password, channel: configuration.wifiChannel)
+        let channel = nextChannel(for: configuration)
+        let wifi = try AccessoryMessages.WiFi(ssid: configuration.ssid, password: configuration.password, channel: channel)
         // Diagnostic: iOS compares this SSID/channel against the current Wi-Fi and silently
         // refuses to connect the RTSP endpoint when they differ. Log the exact bytes so a
         // trailing space or a wrong channel is visible instead of guessed.
@@ -70,7 +90,7 @@ final class SameDeviceProbe {
         let trimmed = ssid.trimmingCharacters(in: .whitespacesAndNewlines)
         let whitespaceNote = trimmed == ssid ? "" : CWL("（注意：名称首尾含空白字符）")
         onLog?(CWL("iAP2 StartSession：SSID=「{1}」{2} UTF-8 字节={3} 信道={4} 地址={5}:{6}",
-            [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: configuration.wifiChannel),
+            [ssid, whitespaceNote, String(ssid.utf8.count), String(describing: channel),
              configuration.address, String(describing: configuration.port)]))
         try send(AccessoryMessages.startSession(address: configuration.address, port: configuration.port,
             deviceID: configuration.deviceID, wifi: wifi))
@@ -148,7 +168,7 @@ final class SameDeviceProbe {
             try requestSession(configuration)
             if !requested && expectsLocalControl {
                 let run = generation
-                for delay in [3.0, 6.0, 9.0] {
+                for delay in [3.0, 6.0, 9.0, 12.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         guard let self, self.active, self.generation == run, !self.controlConnected else { return }
                         do { try self.requestSession(configuration) }
