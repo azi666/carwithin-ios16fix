@@ -38,14 +38,24 @@ enum WiFiCredentials {
     /// State of every storage layer, for diagnostics. Never includes the secret itself.
     static func diagnostic(for ssid: String) -> String {
         temporaryLock.lock()
-        let memory = temporaryPasswords[ssid] != nil
+        let memoryHit = temporaryPasswords[ssid] != nil
         temporaryLock.unlock()
-        var lookup = query(ssid); lookup[kSecReturnData as String] = true
+        var lookup = query(ssid)
+        lookup[kSecReturnData as String] = true
         var result: CFTypeRef?
         let status = SecItemCopyMatching(lookup as CFDictionary, &result)
         let file = loadStore()
         let fileExists = storeURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
-        return "内存=\(memory ? "有" : "无")｜Keychain=\(status)｜文件存在=\(fileExists ? "是" : "否")｜文件命中=\(file[ssid] != nil ? "是" : "否")｜文件条目=\(file.keys.count)"
+        // Assembled step by step: a single interpolated expression with nested ternaries
+        // exceeds the type checker's budget on some Xcode versions.
+        let memoryText: String = memoryHit ? "有" : "无"
+        let existsText: String = fileExists ? "是" : "否"
+        let hitText: String = file[ssid] != nil ? "是" : "否"
+        let entryCount = file.keys.count
+        let keychainText = String(status)
+        return "内存=" + memoryText + "｜Keychain=" + keychainText
+            + "｜文件存在=" + existsText + "｜文件命中=" + hitText
+            + "｜文件条目=" + String(entryCount)
     }
 
     static func savedMessage(for ssid: String) -> String {
