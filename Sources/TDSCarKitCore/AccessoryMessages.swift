@@ -109,14 +109,11 @@ public enum AccessoryMessages {
                 IAP2Parameter(id: 2, value: Data([wifi.channel])), string(3, address),
                 IAP2Parameter(id: 4, value: Data([wifi.password.isEmpty ? 0 : 2]))]))
         }
-        // Parameter 4 carries the AirPlay receiver public key (hex). DiPlay always sends it;
-        // leaving it empty means iOS has no key to match against the mDNS pk and it never
-        // opens the RTSP connection.
+        // Keep the wire format the build that connected used: parameter 4 empty, no parameter 8.
+        // Adding the AirPlay public key and mutualAuth here coincided with iOS refusing to dial.
+        _ = publicKey
         fields += [IAP2Parameter(id: 2, value: portBytes), string(3, deviceID),
-                   string(4, publicKey), string(5, sessionSourceVersion)]
-        // Parameter 8 declares mutual authentication support, which DiPlay always sets.
-        // Without it iOS may treat the endpoint as unauthenticated and never dial RTSP.
-        fields.append(IAP2Parameter(id: 8, value: Data([1])))
+                   string(4, ""), string(5, sessionSourceVersion)]
         return IAP2Message(id: 0x4301, parameters: fields)
     }
 }
