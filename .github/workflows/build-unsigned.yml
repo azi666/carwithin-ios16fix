@@ -52,6 +52,15 @@ jobs:
             TDS_WIFI_ENTITLEMENTS="App/TDSCarKit.entitlements" \
             TDS_WIFI_NAME_DETECTION=YES \
             build 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Surface the compiler diagnostics as annotations so they are readable through
+            # the API without downloading the log artifact (blocked on some networks).
+            grep " error: " build.log | head -8 | while IFS= read -r line; do
+              echo "::error file=build.log::$line"
+            done
+            exit "$status"
+          fi
 
       - name: Package IPA
         run: |
