@@ -35,6 +35,19 @@ enum WiFiCredentials {
     }
     private static func storedPassword(for ssid: String) -> String? { loadStore()[ssid] }
 
+    /// State of every storage layer, for diagnostics. Never includes the secret itself.
+    static func diagnostic(for ssid: String) -> String {
+        temporaryLock.lock()
+        let memory = temporaryPasswords[ssid] != nil
+        temporaryLock.unlock()
+        var lookup = query(ssid); lookup[kSecReturnData as String] = true
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(lookup as CFDictionary, &result)
+        let file = loadStore()
+        let fileExists = storeURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+        return "内存=\(memory ? "有" : "无")｜Keychain=\(status)｜文件存在=\(fileExists ? "是" : "否")｜文件命中=\(file[ssid] != nil ? "是" : "否")｜文件条目=\(file.keys.count)"
+    }
+
     static func savedMessage(for ssid: String) -> String {
         isTemporary(for: ssid) ? temporaryNotice : CWL("Wi-Fi 密码已保存到 Keychain")
     }
