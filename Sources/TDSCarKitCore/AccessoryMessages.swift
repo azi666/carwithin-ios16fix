@@ -37,6 +37,12 @@ public enum AccessoryMessages {
             IAP2Parameter(id: 2, value: Data()), IAP2Parameter(id: 4, value: Data())]))
         return IAP2Message(id: 0x1d01, parameters: fields)
     }
+    /// Source version echoed inside StartSession. Real head units advertise 9xx; iOS 18+ appears
+    /// to gate the session on it, while iOS 16 was verified with the original value.
+    private static var sessionSourceVersion: String {
+        if #available(iOS 18.0, *) { return "950.7.1" }
+        return "509.11"
+    }
     public static func startSession(address: String, port: UInt16, deviceID: String, wifi: WiFi? = nil) throws -> IAP2Message {
         // sendCarPlayStartSessionManual calls appendU32TLV for parameter 2.
         let portBytes = Data([0, 0, UInt8(truncatingIfNeeded: port >> 8), UInt8(truncatingIfNeeded: port)])
@@ -47,7 +53,7 @@ public enum AccessoryMessages {
                 IAP2Parameter(id: 2, value: Data([wifi.channel])), string(3, address),
                 IAP2Parameter(id: 4, value: Data([wifi.password.isEmpty ? 0 : 2]))]))
         }
-        fields += [IAP2Parameter(id: 2, value: portBytes), string(3, deviceID), string(4, ""), string(5, "509.11")]
+        fields += [IAP2Parameter(id: 2, value: portBytes), string(3, deviceID), string(4, ""), string(5, sessionSourceVersion)]
         return IAP2Message(id: 0x4301, parameters: fields)
     }
 }
