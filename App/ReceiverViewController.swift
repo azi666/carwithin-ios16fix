@@ -1465,7 +1465,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                     return
                 }
                 if self.ssidField.text != network.ssid {
-                    self.log(CWL("自动读取 Wi-Fi 名称：拿到「{1}」，原输入「{2}」", [network.ssid, previousSSID]))
+                    self.log(CWL("自动读取 Wi-Fi 名称：拿到「{1}」，原输入「{2}」", [network.ssid, previousSSID ?? ""]))
                     self.ssidField.text = network.ssid; self.networkNameChanged(); self.loadWiFiPassword()
                 } else {
                     self.log(CWL("自动读取 Wi-Fi 名称：与当前输入一致（「{1}」），不重复读取密码", [network.ssid]))
