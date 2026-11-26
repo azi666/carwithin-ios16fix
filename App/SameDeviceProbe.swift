@@ -81,7 +81,9 @@ final class SameDeviceProbe {
     }
 
     private func requestSession(_ configuration: ReceiverConfiguration) throws {
-        let channel = nextChannel(for: configuration)
+        // Manual testing: always use the channel configured in the app so the operator can
+        // change one variable at a time (automatic rotation made results hard to attribute).
+        let channel = configuration.wifiChannel
         let wifi = try AccessoryMessages.WiFi(ssid: configuration.ssid, password: configuration.password, channel: channel)
         // Diagnostic: iOS compares this SSID/channel against the current Wi-Fi and silently
         // refuses to connect the RTSP endpoint when they differ. Log the exact bytes so a
