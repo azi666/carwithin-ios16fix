@@ -124,6 +124,11 @@ enum WiFiCredentials {
 }
 
 /// Persistent receiver key, independent of the accessory certificate identity.
+///
+/// Keychain is preferred, but a TrollStore (ldid) signature can report `SecItemAdd` success and
+/// still not persist the item, which made the receiver mint a brand-new AirPlay identity on every
+/// launch. iOS then saw "same name, different accessory" and refused to connect the RTSP endpoint.
+/// The identity is therefore mirrored into the app sandbox and read back from there as a fallback.
 final class AirPlayCredentials {
     /// Drops the receiver identity and every stored controller key. The next session then has
     /// to run a full pair-setup instead of pair-verify, which is how an iOS build that stalls
@@ -134,22 +139,51 @@ final class AirPlayCredentials {
                                         kSecAttrService as String: service]
             SecItemDelete(query as CFDictionary)
         }
+        try? FileManager.default.removeItem(at: identityURL)
+        try? FileManager.default.removeItem(at: controllersURL)
     }
+
+    // MARK: sandbox mirror
+
+    private static var identityURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("airplay-identity.json")
+    }
+    private static var controllersURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("airplay-controllers.json")
+    }
+    private static func readMap(_ url: URL?) -> [String: String] {
+        guard let url, let data = try? Data(contentsOf: url),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return map
+    }
+    private static func writeMap(_ map: [String: String], to url: URL?) throws {
+        guard let url else { return }
+        let data = try JSONEncoder().encode(map)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
     let signingKey: Curve25519.Signing.PrivateKey
     let identifier: String
     private func pairingQuery(_ identifier: String) -> [String: Any] {
-        let account = SHA256.hash(data: Data(identifier.utf8)).map { String(format: "%02x", $0) }.joined()
+        let account = Self.account(for: identifier)
         return [kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: "local.tds.carkit.controllers", kSecAttrAccount as String: account]
+    }
+    private static func account(for identifier: String) -> String {
+        SHA256.hash(data: Data(identifier.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     func controller(_ identifier: String) throws -> Curve25519.Signing.PublicKey? {
         var query = pairingQuery(identifier); query[kSecReturnData as String] = true
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        if status == errSecSuccess, let data = result as? Data,
+           let key = try? Curve25519.Signing.PublicKey(rawRepresentation: data) {
+            return key
         }
+        guard let encoded = Self.readMap(Self.controllersURL)[Self.account(for: identifier)],
+              let data = Data(base64Encoded: encoded) else { return nil }
         return try Curve25519.Signing.PublicKey(rawRepresentation: data)
     }
     func saveController(_ identifier: String, key: Data) throws {
@@ -157,10 +191,12 @@ final class AirPlayCredentials {
             guard existing.rawRepresentation == key else { throw ProtocolError.malformed(CWL("已配对控制端的密钥发生变化")) }
             return
         }
+        var map = Self.readMap(Self.controllersURL)
+        map[Self.account(for: identifier)] = key.base64EncodedString()
+        try Self.writeMap(map, to: Self.controllersURL)
         var item = pairingQuery(identifier); item[kSecValueData as String] = key
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+        _ = SecItemAdd(item as CFDictionary, nil)
     }
     init() throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
@@ -168,17 +204,41 @@ final class AirPlayCredentials {
         var lookup = query; lookup[kSecReturnData as String] = true
         var result: CFTypeRef?
         let status = SecItemCopyMatching(lookup as CFDictionary, &result)
-        if status == errSecSuccess, let data = result as? Data {
-            let values = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
-            guard let key = values?["key"] as? Data, let id = values?["id"] as? String else { throw ProtocolError.malformed(CWL("已存储的 AirPlay 身份无效")) }
-            signingKey = try Curve25519.Signing.PrivateKey(rawRepresentation: key); identifier = id
-        } else if status == errSecItemNotFound {
-            signingKey = Curve25519.Signing.PrivateKey(); identifier = UUID().uuidString
-            let data = try PropertyListSerialization.data(fromPropertyList: ["key": signingKey.rawRepresentation, "id": identifier], format: .binary, options: 0)
+        if status == errSecSuccess, let data = result as? Data,
+           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+           let values = plist as? [String: Any],
+           let key = values["key"] as? Data, let id = values["id"] as? String,
+           let parsed = try? Curve25519.Signing.PrivateKey(rawRepresentation: key) {
+            signingKey = parsed; identifier = id
+            return
+        }
+        // Keychain empty or unreliable: reuse the sandbox copy so the identity stays stable.
+        let mirrored = Self.readMap(Self.identityURL)
+        if let encoded = mirrored["key"], let id = mirrored["id"],
+           let keyData = Data(base64Encoded: encoded),
+           let parsed = try? Curve25519.Signing.PrivateKey(rawRepresentation: keyData) {
+            signingKey = parsed; identifier = id
+            Self.persist(keyData, id: id)
+            return
+        }
+        let key = Curve25519.Signing.PrivateKey()
+        signingKey = key
+        identifier = UUID().uuidString
+        Self.persist(key.rawRepresentation, id: identifier)
+    }
+    private static func persist(_ key: Data, id: String) {
+        var map = readMap(identityURL)
+        map["key"] = key.base64EncodedString()
+        map["id"] = id
+        try? writeMap(map, to: identityURL)
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "local.tds.carkit.airplay", kSecAttrAccount as String: "identity"]
+        if let data = try? PropertyListSerialization.data(
+            fromPropertyList: ["key": key, "id": id], format: .binary, options: 0) {
             var item = query; item[kSecValueData as String] = data
             item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let stored = SecItemAdd(item as CFDictionary, nil)
-            guard stored == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(stored)) }
-        } else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+            SecItemDelete(query as CFDictionary)
+            _ = SecItemAdd(item as CFDictionary, nil)
+        }
     }
 }
