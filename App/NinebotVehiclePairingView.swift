@@ -19,8 +19,21 @@ struct NinebotVehiclePairingView: View {
                     connection.selectVehicle(nil)
                 }
                 ForEach(connection.garage.vehicles) { vehicle in
-                    vehicleRow(vehicle.name, selected: vehicle.id == connection.garage.selected?.id) {
-                        connection.selectVehicle(vehicle.id)
+                    HStack(spacing: 8) {
+                        vehicleRow(vehicle.name, selected: vehicle.id == connection.garage.selected?.id) {
+                            connection.selectVehicle(vehicle.id)
+                        }
+                        // Swipe-to-delete existed but was invisible; expose an explicit control too.
+                        Button {
+                            vehicleToForget = vehicle
+                            confirmsRemoval = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red)
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(CWL("删除 {1}", [vehicle.name]))
                     }
                     .swipeActions(allowsFullSwipe: false) {
                         Button(CWL("删除"), role: .destructive) {
@@ -32,7 +45,11 @@ struct NinebotVehiclePairingView: View {
             } header: {
                 Text(CWL("已配对车辆"))
             } footer: {
-                if locked { Text(CWL("停止投屏后可添加或更换车辆。")) }
+                if locked {
+                    Text(CWL("停止投屏后可添加或更换车辆。"))
+                } else if !connection.garage.vehicles.isEmpty {
+                    Text(CWL("点右侧红色垃圾桶或左滑可删除本机配对记录（同时清除该车的蓝牙密钥）。"))
+                }
             }
             .disabled(locked || !connection.canChooseVehicle)
 
