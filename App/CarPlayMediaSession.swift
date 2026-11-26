@@ -144,15 +144,11 @@ final class CarPlayMediaSession {
         if let proposed = values["features"] as? [String] {
             onLog?(CWL("iPhone 提议的会话功能：{1}", [String(describing: proposed.joined(separator: ", "))]))
         }
-        // Echo back only what the iPhone actually proposed and we can honour. Declaring an
-        // extra capability (iAPChannel on iOS 16.1.2, which never offers it) made the phone
-        // skip the video stream entirely after tearing down the audio one.
-        let proposedFeatures = (values["features"] as? [String]) ?? []
-        var features: [String] = []
-        if proposedFeatures.contains("iAPChannel") { features.append("iAPChannel") }
-        if proposedFeatures.contains("viewAreas") { features.append("viewAreas") }
-        if hevc, proposedFeatures.contains("hevc") { features.append("hevc") }
-        if features.isEmpty { features = ["viewAreas"] }
+        // iAPChannel is mandatory on iOS 16: omitting it made the phone skip the RTSP connection
+        // entirely (A/B verified on iOS 16.1.2 — build 45767651919 with it connected, the build
+        // without it never opened the control channel). Keep it unconditional.
+        var features = ["iAPChannel", "viewAreas"]
+        if hevc { features.append("hevc") }
         var response: [String: Any] = ["eventPort": listener.port, "timingPort": timing!.port, "enabledFeatures": features]
         // CarWithin has no dedicated keep-alive listener, and pointing keepAlivePort at the
         // event port would make iOS open a second event stream on it. Log the request instead
