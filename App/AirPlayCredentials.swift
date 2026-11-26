@@ -2,10 +2,11 @@ import Foundation
 import CryptoKit
 import Security
 
-/// Persist passwords in Keychain when available; an entitlement fallback stays in process memory.
+/// Persists Wi-Fi passwords in three layers, because sideloading signatures differ:
+/// memory for the current process, Keychain when the signature grants
+/// `keychain-access-groups` (企业证书/全能签), and an app-sandbox file when it does not
+/// (TrollStore's ldid signature has no Keychain entitlement and returns -34018).
 enum WiFiCredentials {
-    // Some sideloading signatures cannot access Keychain. Keep only the current process's
-    // Wi-Fi password in memory in that case; never write a plaintext fallback to defaults.
     private static let temporaryLock = NSLock()
     private static var temporaryPasswords: [String: String] = [:]
 
@@ -14,7 +15,25 @@ enum WiFiCredentials {
         return temporaryPasswords[ssid] != nil
     }
 
-    static let temporaryNotice = CWL("当前签名无法访问钥匙串（-34018）。密码仅在本次 App 运行期间保留，App 重新启动后需重新输入。若要长期保存，请使用具有钥匙串访问权限的有效签名重新安装。")
+    static let temporaryNotice = CWL("当前签名无法访问钥匙串（-34018）。密码已保存到 App 数据目录，App 重启后仍可使用；重装 App 后需要重新输入。如果要存进钥匙串，请用带钥匙串权限的有效签名重新安装。")
+
+    /// Sandbox file used when Keychain is unavailable. File protection matches the
+    /// Keychain accessibility used above (readable after first unlock, device only).
+    private static var storeURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("wifi-credentials.json")
+    }
+    private static func loadStore() -> [String: String] {
+        guard let url = storeURL, let data = try? Data(contentsOf: url),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return dict
+    }
+    private static func writeStore(_ dict: [String: String]) throws {
+        guard let url = storeURL else { return }
+        let data = try JSONEncoder().encode(dict)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    private static func storedPassword(for ssid: String) -> String? { loadStore()[ssid] }
 
     static func savedMessage(for ssid: String) -> String {
         isTemporary(for: ssid) ? temporaryNotice : CWL("Wi-Fi 密码已保存到 Keychain")
@@ -34,12 +53,19 @@ enum WiFiCredentials {
         var lookup = query(ssid); lookup[kSecReturnData as String] = true
         var result: CFTypeRef?
         let status = SecItemCopyMatching(lookup as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else {
+        if status == errSecSuccess, let data = result as? Data,
+           let password = String(data: data, encoding: .utf8) {
+            return password
+        }
+        // Not in Keychain (either absent or the signature has no entitlement): fall back
+        // to the sandbox file so a TrollStore build still remembers the password.
+        if status == errSecSuccess || status == errSecItemNotFound || status == errSecMissingEntitlement {
+            if let stored = storedPassword(for: ssid) { return stored }
+        }
+        guard status == errSecSuccess || status == errSecItemNotFound || status == errSecMissingEntitlement else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
-        return password
+        return nil
     }
     static func save(_ password: String, for ssid: String) throws {
         let attributes: [String: Any] = [kSecValueData as String: Data(password.utf8),
@@ -48,16 +74,25 @@ enum WiFiCredentials {
         if status == errSecItemNotFound {
             status = SecItemAdd(query(ssid).merging(attributes) { _, value in value } as CFDictionary, nil)
         }
-        guard status == errSecSuccess || status == errSecMissingEntitlement else {
+        if status == errSecSuccess {
+            temporaryLock.lock(); temporaryPasswords.removeValue(forKey: ssid); temporaryLock.unlock()
+            return
+        }
+        guard status == errSecMissingEntitlement || status == errSecItemNotFound else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
-        temporaryLock.lock(); defer { temporaryLock.unlock() }
-        if status == errSecMissingEntitlement { temporaryPasswords[ssid] = password }
-        else { temporaryPasswords.removeValue(forKey: ssid) }
+        // Signature cannot use Keychain: persist to the sandbox file and keep an in-memory
+        // copy so the current session reads it back immediately.
+        var dict = loadStore()
+        dict[ssid] = password
+        try writeStore(dict)
+        temporaryLock.lock(); temporaryPasswords[ssid] = password; temporaryLock.unlock()
     }
     static func forget(_ ssid: String) throws {
         let status = SecItemDelete(query(ssid) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
+        var dict = loadStore()
+        if dict.removeValue(forKey: ssid) != nil { try writeStore(dict) }
+        guard status == errSecSuccess || status == errSecItemNotFound || status == errSecMissingEntitlement else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
         temporaryLock.lock(); defer { temporaryLock.unlock() }
