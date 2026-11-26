@@ -162,15 +162,6 @@ final class SameDeviceProbe {
         case 0x1d02:
             identified = true
             stage(CWL("iOS 已接受配件识别，正在等待 CarPlay 可用通知"))
-            // Announce the accessory Wi-Fi configuration before iOS decides whether to connect.
-            let security: UInt8 = configuration.password.isEmpty ? 0 : 2
-            try send(AccessoryMessages.wifiConfiguration(ssid: configuration.ssid,
-                password: configuration.password, channel: configuration.wifiChannel, security: security))
-            stage(CWL("已上报配件 Wi-Fi 配置（0x5703）：SSID=「{1}」信道={2} 安全={3}",
-                [configuration.ssid, String(describing: configuration.wifiChannel), String(describing: security)]))
-            // Feature subscriptions: iOS expects these before it exposes CarPlay availability.
-            for subscription in try AccessoryMessages.subscriptions() { try send(subscription) }
-            stage(CWL("已发送 5 项 CarPlay 功能订阅（0x5000/0x5200/0xAE00/0x4157/0x4154）"))
         case 0x1d03:
             let rejected = message.parameters.map { String(format: "%04X:%@", $0.id, $0.value.prefix(32).map { String(format: "%02X", $0) }.joined()) }.joined(separator: ",")
             finish(CWL("iOS 拒绝了配件识别（0x1D03）：{1}", [String(describing: rejected)]))
