@@ -670,6 +670,8 @@ final class NativeReceiver {
             }
             return RTSPResponse()
         case ("TEARDOWN", _):
+            // The body is only 42 bytes; dump it so iOS's reason for abandoning the session is visible.
+            log(CWL("CarPlay TEARDOWN 原始 body：{1}", [request.body.map { String(format: "%02x", $0) }.joined()]))
             // Log only protocol structure, never arbitrary values or credentials.
             if let values = try? PropertyListSerialization.propertyList(from: request.body, format: nil) as? [String: Any] {
                 let types = (values["streams"] as? [[String: Any]])?.compactMap { ($0["type"] as? NSNumber)?.intValue }
