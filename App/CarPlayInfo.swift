@@ -79,7 +79,6 @@ enum CarPlayInfo {
             "model": "CarWithin1,1", "manufacturer": "CarWithin", "deviceID": config.deviceID,
             "bluetoothIDs": [config.deviceID], "name": config.name, "rightHandDrive": config.rightHandDrive,
             "keepAliveLowPower": false, "keepAliveSendStatsAsBody": false, "modes": modes,
-            "extendedFeatures": ["vocoderInfo", "enhancedRequestCarUI"],
             "displays": [display], "hidDevices": hidDevices]
         if config.videoCodec == .h265 { info["hevcInfo"] = [String: Any]() }
         if let icon = config.oemIconPNG, let size = vehicleButtonSize(in: config) {
