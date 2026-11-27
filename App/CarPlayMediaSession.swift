@@ -148,11 +148,13 @@ final class CarPlayMediaSession {
         // two-item list made iOS 16.1.2 keep retrying the audio stream and never request the
         // video stream at all (log: repeated "已请求媒体流 102" + TEARDOWN, never 110), so the
         // phone never had a reason to start video.
-        // Echo the proposal. A fixed two-item list made iOS refuse the control connection on
-        // 16.4.1 (A/B: echo connected at 08:49, the fixed list did not at 09:01).
+        // Echo the proposal, minus capabilities this receiver cannot honour. Declaring altScreen
+        // while /info exposes a single display (and hevc without a hardware encoder) makes iOS
+        // accept the control channel and then TEARDOWN the whole media session right after RECORD.
         let proposedFeatures = (values["features"] as? [String]) ?? []
-        var features = proposedFeatures
-        if !hevc { features.removeAll { $0 == "hevc" } }
+        var unsupported: Set<String> = ["altScreen"]
+        if !hevc { unsupported.insert("hevc") }
+        var features = proposedFeatures.filter { !unsupported.contains($0) }
         for required in ["iAPChannel", "viewAreas"] where !features.contains(required) {
             features.append(required)
         }
