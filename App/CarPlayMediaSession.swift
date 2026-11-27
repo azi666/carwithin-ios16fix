@@ -148,10 +148,14 @@ final class CarPlayMediaSession {
         // two-item list made iOS 16.1.2 keep retrying the audio stream and never request the
         // video stream at all (log: repeated "已请求媒体流 102" + TEARDOWN, never 110), so the
         // phone never had a reason to start video.
-        // Reply with a fixed pair. A receiver that rendered video on iOS 16.x answered exactly
-        // this way; echoing the full proposal left iOS looping on the audio stream.
-        var features = ["iAPChannel", "viewAreas"]
-        if hevc { features.append("hevc") }
+        // Echo the proposal. A fixed two-item list made iOS refuse the control connection on
+        // 16.4.1 (A/B: echo connected at 08:49, the fixed list did not at 09:01).
+        let proposedFeatures = (values["features"] as? [String]) ?? []
+        var features = proposedFeatures
+        if !hevc { features.removeAll { $0 == "hevc" } }
+        for required in ["iAPChannel", "viewAreas"] where !features.contains(required) {
+            features.append(required)
+        }
         var response: [String: Any] = ["eventPort": listener.port, "timingPort": timing!.port, "enabledFeatures": features]
         // CarWithin has no dedicated keep-alive listener, and pointing keepAlivePort at the
         // event port would make iOS open a second event stream on it. Log the request instead
