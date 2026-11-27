@@ -45,7 +45,9 @@ final class SameDeviceProbe {
                 guard let self, self.active, self.generation == run, !self.requested else { return }
                 self.finish(CWL("会话启动超时（链路={1}，认证={2}，识别={3}）", [String(describing: self.linked), String(describing: self.authenticated), String(describing: self.identified)]))
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
+            // Fail fast: the caller wants to react (prompt to toggle Wi-Fi, auto-retry) within
+            // seconds, not after a 45 s wait.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
                 guard let self, self.active, self.generation == run, self.expectsLocalControl, !self.controlConnected else { return }
                 self.finish(CWL("未收到 CarPlay 控制连接，请检查 Wi-Fi 名称和密码后重试。兼容信道通常可保持默认值。"))
             }
