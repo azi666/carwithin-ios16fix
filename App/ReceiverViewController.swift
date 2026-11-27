@@ -2119,9 +2119,45 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
     }
     @objc private func copyLog() { UIPasteboard.general.string = lines.joined(separator: "\n") }
+    private func shareLogFile() {
+        guard let url = Self.logFileURL, FileManager.default.fileExists(atPath: url.path) else {
+            alert(CWL("暂无日志"), CWL("日志文件尚未生成。")); return
+        }
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.popoverPresentationController?.sourceView = view
+        present(controller, animated: true)
+    }
+    private func clearLogFile() {
+        if let url = Self.logFileURL { try? FileManager.default.removeItem(at: url) }
+        lines.removeAll(); logView.text = ""
+        alert(CWL("已清空"), CWL("日志文件已删除，本次会话的日志会重新写入。"))
+    }
+    /// Persistent log file so long sessions can be analysed afterwards. The in-app view keeps the
+    /// last 200 lines, but the file keeps everything (rotating once it passes 4 MB).
+    static let logFileURL: URL? = FileManager.default
+        .urls(for: .documentDirectory, in: .userDomainMask).first?
+        .appendingPathComponent("carwithin.log")
+    private static let logFileLimit = 4 * 1024 * 1024
+    private func appendLogFile(_ line: String) {
+        guard let url = Self.logFileURL, let data = (line + "\n").data(using: .utf8) else { return }
+        let manager = FileManager.default
+        if let attributes = try? manager.attributesOfItem(atPath: url.path),
+           let size = attributes[.size] as? Int, size > Self.logFileLimit {
+            let previous = url.deletingLastPathComponent().appendingPathComponent("carwithin.log.1")
+            try? manager.removeItem(at: previous)
+            try? manager.moveItem(at: url, to: previous)
+        }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile(); handle.write(data); try? handle.close()
+        } else {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
     private func log(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
-        lines.append("\(timestamp)  \(message)"); if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+        let line = "\(timestamp)  \(message)"
+        lines.append(line); if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+        appendLogFile(line)
         if logView.window != nil {
             logView.text = lines.joined(separator: "\n")
             if !logView.text.isEmpty { logView.scrollRangeToVisible(NSRange(location: logView.text.utf16.count - 1, length: 1)) }
@@ -3247,10 +3283,18 @@ extension ReceiverViewController {
     fileprivate func logPage() -> SettingsPageController {
         let controller = page(CWL("日志")) { [unowned self] in
             [
-                SettingsSection(footer: CWL("最近 200 条，不含 Wi-Fi 密码和 MFi 私钥。"), [.view(logView)]),
-                SettingsSection([.action(CWL("复制日志"), icon: ("doc.on.doc.fill", .systemBlue)) { [unowned self] in
-                    self.copyLog(); self.alert(CWL("已复制"), CWL("日志已复制到剪贴板。"))
-                }])
+                SettingsSection(footer: CWL("界面仅显示最近 200 条；完整日志持续写入 App 数据目录（超过 4 MB 自动轮转），可用下方导出长期分析。其中可能包含 Wi-Fi 密码与 MFi 私钥。"), [.view(logView)]),
+                SettingsSection([
+                    .action(CWL("导出日志文件"), icon: ("square.and.arrow.up", .systemBlue)) { [unowned self] in
+                        self.shareLogFile()
+                    },
+                    .action(CWL("复制界面日志"), icon: ("doc.on.doc.fill", .systemBlue)) { [unowned self] in
+                        self.copyLog(); self.alert(CWL("已复制"), CWL("日志已复制到剪贴板。"))
+                    },
+                    .action(CWL("清空日志"), icon: ("trash.fill", .systemRed)) { [unowned self] in
+                        self.clearLogFile()
+                    }
+                ])
             ]
         }
         logView.constraints.filter { $0.firstAttribute == .height }.forEach { $0.constant = 380 }
@@ -3336,7 +3380,7 @@ extension ReceiverViewController {
         name.adjustsFontForContentSizeCategory = true
         name.accessibilityTraits.insert(.header)
         let version = UILabel()
-        version.text = CWL("版本 {1}（{2}）", [String(describing: info["CFBundleShortVersionString"] as? String ?? "-"), String(describing: info["CFBundleVersion"] as? String ?? "-")])
+        version.text = CWL("版本 {1}（{2}）Beta", [String(describing: info["CFBundleShortVersionString"] as? String ?? "-"), String(describing: info["CFBundleVersion"] as? String ?? "-")])
         version.font = .preferredFont(forTextStyle: .subheadline)
         version.textColor = .secondaryLabel
         version.adjustsFontForContentSizeCategory = true
