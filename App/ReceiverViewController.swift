@@ -195,6 +195,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let ninebot43AddressField = UITextField()
     /// Auto-retry while iOS is still cooling down after a network switch.
     private var networkRetryTask: Task<Void, Never>?
+    /// True while the auto-retry loop owns the hint label, so stage text does not overwrite it.
+    private var isRetryingNetwork = false
     private var networkRetryCount = 0
     private let networkRetryLimit = 8
     private let ninebotVehicle = NinebotVehicleConnection()
@@ -822,10 +824,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             // Always surface the current negotiation stage. On iOS 16 the session can stall
             // right after pair-verify, and this line is the only on-screen clue without
             // opening the diagnostic log.
-            self.startupHintGeneration = UUID()
-            self.startupHint.text = message
-            self.startupHint.isHidden = false
-            self.scheduleStartupHint()
+            if message.contains(CWL("控制连接已建立")) { self.isRetryingNetwork = false }
+            if !self.isRetryingNetwork {
+                self.startupHintGeneration = UUID()
+                self.startupHint.text = message
+                self.startupHint.isHidden = false
+                self.scheduleStartupHint()
+            }
         }
         sameDevice.onLog = { [weak self] in self?.log($0) }
         sameDevice.onFinished = { [weak self] message in
@@ -1845,12 +1850,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard modeControl.selectedSegmentIndex == 1 else { return }
         guard networkRetryCount < networkRetryLimit else {
             networkRetryCount = 0
+            isRetryingNetwork = false
             statusLabel.text = CWL("自动重试已结束。请从控制中心关闭再打开 Wi-Fi 后重试。")
             return
         }
         networkRetryCount += 1
         let attempt = networkRetryCount
         // Small single-line hint instead of the large status label so it does not wrap or shout.
+        isRetryingNetwork = true
         startupHintGeneration = UUID()
         startupHint.text = CWL("iOS 正在冷却，开关 Wi-Fi 可加速（重试 {1}/{2}）",
             [String(attempt), String(networkRetryLimit)])
