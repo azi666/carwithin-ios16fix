@@ -1617,7 +1617,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
            let current = nameField.text, !current.isEmpty {
             let base = String(current.prefix(20))
             nameField.text = base + "-" + String(UUID().uuidString.prefix(3))
-            log(CWL("网络已变化：服务名改为「{1}」，避免 iOS 命中过期缓存",
+            // Rotate the AirPlay identity as well: iOS matches a receiver on name AND pi, so a new
+            // name with the old pi is still treated as the stale receiver and never connects.
+            AirPlayCredentials.resetStoredIdentity()
+            // deviceID is part of the identity iOS associates with the receiver; rotating it too
+            // makes the endpoint look genuinely new instead of a renamed old accessory.
+            UserDefaults.standard.removeObject(forKey: "receiverDeviceID")
+            log(CWL("网络已变化：服务名改为「{1}」并重建底面身份（pi + deviceID），避免 iOS 命中过期缓存",
                 [nameField.text ?? ""]))
         }
         UserDefaults.standard.set(networkKey, forKey: "lastStartNetwork")
