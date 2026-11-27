@@ -44,16 +44,22 @@ final class CarPlayMediaSession {
                 guard let type = stream["type"] as? NSNumber else { throw ProtocolError.malformed(CWL("媒体流类型")) }
                 onLog?(CWL("已请求媒体流 {1}，音频格式 {2}", [String(describing: type), String(describing: (stream["audioFormat"] as? NSNumber)?.stringValue ?? CWL("无"))]))
                 if [100, 101, 102].contains(type.intValue) {
-                    guard audioEnabled else {
-                        // iOS 16 offers audio streams because /info declares the formats even when
-                        // audio output is off. Answer without a dataPort so the video SETUP and the
-                        // rest of the session continue.
-                        onLog?(CWL("音频流 {1} 已请求但音频输出关闭：跳过（不中断会话）", [String(describing: type)]))
-                        replies.append(["type": type]); continue
-                    }
                     guard eventListener != nil, let connectionID = stream["streamConnectionID"] as? NSNumber,
                           let bits = stream["audioFormat"] as? NSNumber else { throw ProtocolError.malformed(CWL("音频 SETUP 字段")) }
                     let format = try ReceiverAudioFormat(bits: bits.uint64Value)
+                    // Audio output off: still allocate ports and drain the stream silently. Replying
+                    // without a dataPort makes iOS TEARDOWN and immediately re-offer the same stream,
+                    // which spun in a SETUP/TEARDOWN loop every few milliseconds.
+                    if !audioEnabled {
+                        audio.removeValue(forKey: type.intValue)?.stop()
+                        let silent = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
+                            connectionID: connectionID.uint64Value, format: format, silent: true)
+                        audio[type.intValue] = silent
+                        replies.append(["type": type, "dataPort": silent.dataPort, "controlPort": silent.controlPort])
+                        onLog?(CWL("音频流 {1} 静默接收（输出关闭，端口 {2} 已分配）",
+                            [String(describing: type), String(describing: silent.dataPort)]))
+                        continue
+                    }
                     let audioType = (stream["audioType"] as? String ?? "").lowercased()
                     let requestsMicrophone = type.intValue == 100 && ["telephony", "speechrecognition", "default"].contains(audioType)
                         && ((stream["input"] as? Bool) == true || (stream["dataPort"] as? NSNumber)?.intValue ?? 0 > 0)
