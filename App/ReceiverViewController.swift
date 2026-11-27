@@ -1607,6 +1607,20 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func toggleReceiver() {
         if running || waitingForNetwork { stop(); return }
+        // iOS keys its AirPlay receiver cache on (service name + pi + network). Switching Wi-Fi
+        // leaves a stale record behind and iOS then silently refuses every StartSession until a
+        // reboot clears it. Comparing this start's network with the previous one lets the app
+        // rotate the name itself, so a switch only costs one re-pair instead of a reboot.
+        let networkKey = "\(ssidField.text ?? "")|\(localCarPlayAddress ?? "")|\(channelField.text ?? "")"
+        let previousNetwork = UserDefaults.standard.string(forKey: "lastStartNetwork")
+        if let previousNetwork, previousNetwork != networkKey,
+           let current = nameField.text, !current.isEmpty {
+            let base = String(current.prefix(20))
+            nameField.text = base + "-" + String(UUID().uuidString.prefix(3))
+            log(CWL("网络已变化：服务名改为「{1}」，避免 iOS 命中过期缓存",
+                [nameField.text ?? ""]))
+        }
+        UserDefaults.standard.set(networkKey, forKey: "lastStartNetwork")
         if !restartingAutomatically { networkRestartCount = 0 }
         clearStartupHint()
         updateCheckTask?.cancel()
