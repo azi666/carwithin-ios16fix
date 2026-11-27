@@ -2146,7 +2146,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard let url = Self.logFileURL, FileManager.default.fileExists(atPath: url.path) else {
             alert(CWL("暂无日志"), CWL("日志文件尚未生成。")); return
         }
-        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        // Export under a timestamped name so successive exports stay distinguishable.
+        let stampFormatter = DateFormatter()
+        stampFormatter.dateFormat = "yyyyMMdd-HHmmss"
+        let stamped = FileManager.default.temporaryDirectory
+            .appendingPathComponent("carwithin-\(stampFormatter.string(from: Date())).log")
+        try? FileManager.default.removeItem(at: stamped)
+        try? FileManager.default.copyItem(at: url, to: stamped)
+        let controller = UIActivityViewController(activityItems: [stamped], applicationActivities: nil)
         controller.popoverPresentationController?.sourceView = view
         // Present from the settings navigation stack: this controller is covered by it, so a
         // present from `self` silently does nothing while the log page is on screen.
