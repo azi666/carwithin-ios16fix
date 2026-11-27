@@ -407,10 +407,14 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         [heading, explanation, statusLabel, connectionHelp, networkSummary].forEach { $0.adjustsFontForContentSizeCategory = true; $0.lineBreakMode = .byWordWrapping }
         statusLabel.font = .preferredFont(forTextStyle: .headline); statusLabel.numberOfLines = 0
         statusLabel.textColor = .systemBlue
+        // iOS indexes its CarPlay receiver cache by Bonjour service name. Once a pairing record
+        // for a given name goes stale the phone silently refuses to connect that name again, so a
+        // fresh install starts with a unique suffix instead of the fixed "CarWithin".
+        let freshName = "CarWithin-" + String(UUID().uuidString.prefix(4))
         let savedName = UserDefaults.standard.string(forKey: "receiverName")
         // Earlier default names follow the rename; a name the user typed is kept.
-        let legacyDefaults: Set<String> = ["TDS Car Kit", "CarPlays"]
-        nameField.text = savedName.map { legacyDefaults.contains($0) ? "CarWithin" : $0 } ?? "CarWithin"
+        let legacyDefaults: Set<String> = ["TDS Car Kit", "CarPlays", "CarWithin"]
+        nameField.text = savedName.map { legacyDefaults.contains($0) ? freshName : $0 } ?? freshName
         ipField.text = ReceiverConfiguration.localIPv4Addresses().first
         let selectedPreset = WiFiPresetStore.selected()
         ssidField.text = selectedPreset?.ssid ?? UserDefaults.standard.string(forKey: "wifiSSID")
