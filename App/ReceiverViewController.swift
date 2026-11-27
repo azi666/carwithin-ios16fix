@@ -1850,7 +1850,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         networkRetryCount += 1
         let attempt = networkRetryCount
-        statusLabel.text = CWL("iOS 需要重新接受连接。\n最快办法：控制中心关闭再打开 Wi-Fi（约 20 秒）。\n正在自动重试（{1}/{2}）…",
+        statusLabel.text = CWL("iOS 正在冷却，开关 Wi-Fi 可加速（重试 {1}/{2}）",
             [String(attempt), String(networkRetryLimit)])
         networkRetryTask?.cancel()
         networkRetryTask = Task { [weak self] in
