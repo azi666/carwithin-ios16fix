@@ -618,10 +618,14 @@ final class NativeReceiver {
             let displays = (info["displays"] as? [[String: Any]]) ?? []
             let featuresValue = (info["features"] as? NSNumber)?.uint64Value
                 ?? (info["features"] as? UInt64) ?? 0
-            log(CWL("/info 下发：displays={1} 项，features=0x{2}，audioFormats={3}，顶层键={4}",
+            let displayKeys = displays.first.map { String($0.keys.sorted().joined(separator: ",")) } ?? CWL("无")
+            let hids = (info["hidDevices"] as? [Any])?.count ?? 0
+            let modes = (info["modes"] as? [Any])?.count ?? 0
+            log(CWL("/info 下发：displays={1} 项，features=0x{2}，audioFormats={3}，hidDevices={4}，modes={5}",
                 [String(displays.count), String(featuresValue, radix: 16),
                  info["audioFormats"] != nil ? CWL("有") : CWL("无"),
-                 String(info.keys.sorted().joined(separator: ","))]))
+                 String(hids), String(modes)]))
+            log(CWL("/info display[0] 键：{1}", [displayKeys]))
             return RTSPResponse(body: try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0),
                                 contentType: "application/x-apple-binary-plist")
         case ("POST", "/auth-setup"):
