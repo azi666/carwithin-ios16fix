@@ -155,13 +155,10 @@ final class CarPlayMediaSession {
         // but has no uiContext / cornerMasks / focusTransfer entries (and there is a single display,
         // no HEVC encoder), and iOS TEARDOWNs the whole media session right after RECORD whenever
         // enabledFeatures claims more than the display backs up.
-        let proposedFeatures = (values["features"] as? [String]) ?? []
-        var unsupported: Set<String> = ["altScreen", "uiContext", "cornerMasks", "focusTransfer"]
-        if !hevc { unsupported.insert("hevc") }
-        var features = proposedFeatures.filter { !unsupported.contains($0) }
-        for required in ["iAPChannel", "viewAreas"] where !features.contains(required) {
-            features.append(required)
-        }
+        // Exactly ["viewAreas"]. A working iOS 16.4.1 session advertises only this one capability;
+        // adding iAPChannel / h.264Level5.1 / mainBuffered / enhancedSiri makes the phone TEARDOWN
+        // the whole media session right after RECORD instead of requesting the media streams.
+        let features = ["viewAreas"]
         var response: [String: Any] = ["eventPort": listener.port, "timingPort": timing!.port, "enabledFeatures": features]
         // CarWithin has no dedicated keep-alive listener, and pointing keepAlivePort at the
         // event port would make iOS open a second event stream on it. Log the request instead
