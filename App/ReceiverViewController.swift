@@ -1474,6 +1474,20 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                     }
                     return
                 }
+                // The public API only exposes the SSID. Try the private channel property so the
+                // compatibility channel is filled in automatically instead of guessed -- a wrong
+                // channel is what makes iOS silently refuse to connect.
+                let probe = network as AnyObject
+                let hasChannel = probe.responds(to: NSSelectorFromString("channel"))
+                if hasChannel, let channel = probe.value(forKey: "channel") as? NSNumber,
+                   (1...196).contains(channel.intValue) {
+                    let previous = Int(self.channelField.text ?? "") ?? 0
+                    if previous != channel.intValue {
+                        self.channelField.text = String(channel.intValue)
+                        self.log(CWL("自动读取 Wi-Fi 信道：{1}（原值 {2}）",
+                            [channel.stringValue, String(previous)]))
+                    }
+                }
                 if self.ssidField.text != network.ssid {
                     self.log(CWL("自动读取 Wi-Fi 名称：拿到「{1}」，原输入「{2}」", [network.ssid, previousSSID ?? ""]))
                     self.ssidField.text = network.ssid; self.networkNameChanged(); self.loadWiFiPassword()
@@ -1586,11 +1600,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func toggleReceiver() {
         if running || waitingForNetwork { stop(); return }
-        // Rotate the auto-generated service name on every start: iOS refuses a name that already
-        // carries a rejected pairing record and only accepts the first pairing per name.
-        if (nameField.text ?? "").hasPrefix("CarWithin-") {
-            nameField.text = "CarWithin-" + String(UUID().uuidString.prefix(4))
-        }
         if !restartingAutomatically { networkRestartCount = 0 }
         clearStartupHint()
         updateCheckTask?.cancel()
