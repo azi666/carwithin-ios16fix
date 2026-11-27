@@ -1813,7 +1813,16 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 guard let address, address != initialAddress || lostAddress, stableSamples >= 3,
                       self.networkRestartCount < 2, UIApplication.shared.applicationState == .active else { continue }
                 self.networkRestartCount += 1
-                self.log(CWL("启动期间 Wi-Fi 已切换或恢复，使用当前地址重新连接 CarPlay"))
+                // iOS keys its AirPlay receiver cache on (service name + pi + network). After a
+                // Wi-Fi switch that record no longer matches, and iOS silently refuses to
+                // reconnect until a reboot clears the cache. Rotating the name makes it treat the
+                // receiver as new, so it pairs again instead of needing a reboot.
+                if let current = self.nameField.text, !current.isEmpty {
+                    let base = String(current.prefix(20))
+                    self.nameField.text = base + "-" + String(UUID().uuidString.prefix(3))
+                }
+                self.log(CWL("启动期间 Wi-Fi 已切换：服务名改为「{1}」，避免 iOS 命中过期缓存",
+                    [self.nameField.text ?? ""]))
                 self.stop(keepVehicleNavigation: true)
                 self.restartingAutomatically = true
                 self.toggleReceiver()
