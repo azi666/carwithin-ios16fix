@@ -82,7 +82,12 @@ final class CarPlayAudio {
     #endif
     var onLog: ((String) -> Void)?
     var onBrowserAudio: ((AVAudioPCMBuffer, UInt64) -> Void)?
-    init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil) throws {
+    /// `silent` keeps the stream alive (port allocated, packets drained) without decoding or
+    /// playing. iOS TEARDOWNs and re-offers an audio stream forever when the SETUP reply carries
+    /// no dataPort, so a muted receiver still has to answer with a real port.
+    private let silent: Bool
+    init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, silent: Bool = false) throws {
+        self.silent = silent
         self.queue = Self.renderQueue; self.connectionID = connectionID; self.format = format
         decoder = try NativeAudioDecoder(format: format)
         output = decoder.output
@@ -97,6 +102,9 @@ final class CarPlayAudio {
     }
     private func receive(_ wire: Data) {
         guard active else { return }
+        // Silent mode still drains and validates the stream so the ports stay alive, but skips
+        // decoding and playback entirely.
+        if silent { _ = try? cipher.receive(wire); return }
         do {
             let packet = try cipher.receive(wire)
             let arrival = DispatchTime.now().uptimeNanoseconds / 1000
