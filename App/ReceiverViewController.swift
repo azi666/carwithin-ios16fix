@@ -1850,8 +1850,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         networkRetryCount += 1
         let attempt = networkRetryCount
-        statusLabel.text = CWL("iOS 正在冷却，开关 Wi-Fi 可加速（重试 {1}/{2}）",
+        // Small single-line hint instead of the large status label so it does not wrap or shout.
+        startupHintGeneration = UUID()
+        startupHint.text = CWL("iOS 正在冷却，开关 Wi-Fi 可加速（重试 {1}/{2}）",
             [String(attempt), String(networkRetryLimit)])
+        startupHint.isHidden = false
+        statusLabel.text = CWL("正在重试连接 CarPlay…")
         networkRetryTask?.cancel()
         networkRetryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 30_000_000_000)
