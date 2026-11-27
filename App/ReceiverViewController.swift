@@ -1586,6 +1586,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func toggleReceiver() {
         if running || waitingForNetwork { stop(); return }
+        // Rotate the auto-generated service name on every start: iOS refuses a name that already
+        // carries a rejected pairing record and only accepts the first pairing per name.
+        if (nameField.text ?? "").hasPrefix("CarWithin-") {
+            nameField.text = "CarWithin-" + String(UUID().uuidString.prefix(4))
+        }
         if !restartingAutomatically { networkRestartCount = 0 }
         clearStartupHint()
         updateCheckTask?.cancel()
