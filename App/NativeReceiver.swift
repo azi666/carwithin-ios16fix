@@ -613,6 +613,15 @@ final class NativeReceiver {
             return RTSPResponse(body: try verify.handle(request.body), contentType: "application/pairing+tlv8")
         case ("GET", "/info"), ("POST", "/info"):
             let info = CarPlayInfo.build(configuration)
+            // iOS TEARDOWNs the whole session right after RECORD when the advertised displays do
+            // not back up the enabled features, so log what is actually being handed over.
+            let displays = (info["displays"] as? [[String: Any]]) ?? []
+            let featuresValue = (info["features"] as? NSNumber)?.uint64Value
+                ?? (info["features"] as? UInt64) ?? 0
+            log(CWL("/info 下发：displays={1} 项，features=0x{2}，audioFormats={3}，顶层键={4}",
+                [String(displays.count), String(featuresValue, radix: 16),
+                 info["audioFormats"] != nil ? CWL("有") : CWL("无"),
+                 String(info.keys.sorted().joined(separator: ","))]))
             return RTSPResponse(body: try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0),
                                 contentType: "application/x-apple-binary-plist")
         case ("POST", "/auth-setup"):
