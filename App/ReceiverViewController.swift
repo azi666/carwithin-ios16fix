@@ -1447,7 +1447,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     private func refreshCurrentNetwork(requestPermission: Bool) {
         guard canDetectWiFiName, !running, !waitingForNetwork, !fetchingNetwork, needsNetworkDetails,
-              requestPermission || (activeWiFiForm == nil && (ssidField.text ?? "").isEmpty) else { return }
+              requestPermission || (activeWiFiForm == nil && (ssidField.text ?? "").isEmpty) else {
+            log(CWL("未执行 Wi-Fi 自动读取：开关={1} 运行中={2} 等待网络={3} 读取中={4} 需要网络信息={5}",
+                [String(canDetectWiFiName), String(running), String(waitingForNetwork),
+                 String(fetchingNetwork), String(needsNetworkDetails)]))
+            return
+        }
         let authorization = locationManager.authorizationStatus
         if authorization == .notDetermined, requestPermission {
             awaitingNetworkPermission = true; locationManager.requestWhenInUseAuthorization(); return
@@ -1468,6 +1473,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 guard !self.running, !self.ssidField.isFirstResponder, !self.passwordField.isFirstResponder,
                       self.ssidField.text == previousSSID, self.activeWiFiForm == form, !self.waitingForNetwork else { return }
                 guard let network else {
+                    self.log(CWL("NEHotspotNetwork.fetchCurrent 返回 nil：检查 wifi-info entitlement 与定位权限（当前={1}）",
+                        [String(describing: self.locationManager.authorizationStatus.rawValue)]))
                     if requestPermission {
                         self.passwordStatus.text = CWL("无法读取 Wi-Fi 名称，请手动填写。")
                         self.reloadVisibleSettings()
