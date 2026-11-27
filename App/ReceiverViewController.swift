@@ -193,6 +193,10 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let ninebotStatus = StatusLabel()
     private let ninebotAddressField = UITextField()
     private let ninebot43AddressField = UITextField()
+    /// Auto-retry while iOS is still cooling down after a network switch.
+    private var networkRetryTask: Task<Void, Never>?
+    private var networkRetryCount = 0
+    private let networkRetryLimit = 8
     private let ninebotVehicle = NinebotVehicleConnection()
     private let ninebotVehicleButton = UIButton(type: .system)
     private let ninebotVehicleStatus = UILabel()
@@ -827,6 +831,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         sameDevice.onFinished = { [weak self] message in
             self?.stop()
             self?.statusLabel.text = message
+            self?.scheduleNetworkRetryIfNeeded()
         }
         #if DEBUG
         // Clears screens recorded by automated tests with a simulated browser.
@@ -1607,26 +1612,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func toggleReceiver() {
         if running || waitingForNetwork { stop(); return }
-        // iOS keys its AirPlay receiver cache on (service name + pi + network). Switching Wi-Fi
-        // leaves a stale record behind and iOS then silently refuses every StartSession until a
-        // reboot clears it. Comparing this start's network with the previous one lets the app
-        // rotate the name itself, so a switch only costs one re-pair instead of a reboot.
-        let networkKey = "\(ssidField.text ?? "")|\(localCarPlayAddress ?? "")|\(channelField.text ?? "")"
-        let previousNetwork = UserDefaults.standard.string(forKey: "lastStartNetwork")
-        if let previousNetwork, previousNetwork != networkKey,
-           let current = nameField.text, !current.isEmpty {
-            let base = String(current.prefix(20))
-            nameField.text = base + "-" + String(UUID().uuidString.prefix(3))
-            // Rotate the AirPlay identity as well: iOS matches a receiver on name AND pi, so a new
-            // name with the old pi is still treated as the stale receiver and never connects.
-            AirPlayCredentials.resetStoredIdentity()
-            // deviceID is part of the identity iOS associates with the receiver; rotating it too
-            // makes the endpoint look genuinely new instead of a renamed old accessory.
-            UserDefaults.standard.removeObject(forKey: "receiverDeviceID")
-            log(CWL("网络已变化：服务名改为「{1}」并重建底面身份（pi + deviceID），避免 iOS 命中过期缓存",
-                [nameField.text ?? ""]))
-        }
-        UserDefaults.standard.set(networkKey, forKey: "lastStartNetwork")
+        if !restartingAutomatically { networkRetryCount = 0; networkRetryTask?.cancel() }
         if !restartingAutomatically { networkRestartCount = 0 }
         clearStartupHint()
         updateCheckTask?.cancel()
@@ -1849,6 +1835,28 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 self.restartingAutomatically = false
                 return
             }
+        }
+    }
+
+    /// After the control connection times out, iOS may still be rejecting this receiver because of
+    /// the network switch. Toggling Wi-Fi clears that instantly; if the user prefers to wait, retry
+    /// every 30 s for about four minutes.
+    private func scheduleNetworkRetryIfNeeded() {
+        guard modeControl.selectedSegmentIndex == 1 else { return }
+        guard networkRetryCount < networkRetryLimit else {
+            networkRetryCount = 0
+            statusLabel.text = CWL("自动重试已结束。请从控制中心关闭再打开 Wi-Fi 后重试。")
+            return
+        }
+        networkRetryCount += 1
+        let attempt = networkRetryCount
+        statusLabel.text = CWL("iOS 需要重新接受连接。\n最快办法：控制中心关闭再打开 Wi-Fi（约 20 秒）。\n正在自动重试（{1}/{2}）…",
+            [String(attempt), String(networkRetryLimit)])
+        networkRetryTask?.cancel()
+        networkRetryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard let self, !Task.isCancelled, !self.running else { return }
+            self.toggleReceiver()
         }
     }
 
