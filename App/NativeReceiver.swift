@@ -542,7 +542,14 @@ final class NativeReceiver {
                         self?.videoOutput.appendAudio(buffer, stream: stream, stamp: stamp)
                     }
                 }
-                if let nightMode { media.setNightMode(nightMode) }
+                // Defer the appearance command: iOS spends ~5 s on this /command before answering
+                // 408, and during that time it does not process GET /info or RECORD. Sending it a few
+                // seconds later keeps day/night switching working without sitting in the handshake.
+                if let nightMode {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak media] in
+                        media?.setNightMode(nightMode)
+                    }
+                }
                 media.onVideo = { [weak self] data, codec in
                     guard let self else { return }
                     #if DEBUG
