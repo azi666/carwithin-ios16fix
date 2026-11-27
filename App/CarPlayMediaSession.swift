@@ -151,8 +151,12 @@ final class CarPlayMediaSession {
         // Echo the proposal, minus capabilities this receiver cannot honour. Declaring altScreen
         // while /info exposes a single display (and hevc without a hardware encoder) makes iOS
         // accept the control channel and then TEARDOWN the whole media session right after RECORD.
+        // Advertise only what the /info display actually implements. The display exposes viewAreas
+        // but has no uiContext / cornerMasks / focusTransfer entries (and there is a single display,
+        // no HEVC encoder), and iOS TEARDOWNs the whole media session right after RECORD whenever
+        // enabledFeatures claims more than the display backs up.
         let proposedFeatures = (values["features"] as? [String]) ?? []
-        var unsupported: Set<String> = ["altScreen"]
+        var unsupported: Set<String> = ["altScreen", "uiContext", "cornerMasks", "focusTransfer"]
         if !hevc { unsupported.insert("hevc") }
         var features = proposedFeatures.filter { !unsupported.contains($0) }
         for required in ["iAPChannel", "viewAreas"] where !features.contains(required) {
