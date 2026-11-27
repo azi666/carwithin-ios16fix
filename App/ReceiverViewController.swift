@@ -2125,7 +2125,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         controller.popoverPresentationController?.sourceView = view
-        present(controller, animated: true)
+        // Present from the settings navigation stack: this controller is covered by it, so a
+        // present from `self` silently does nothing while the log page is on screen.
+        (settingsNavigation ?? self).present(controller, animated: true)
     }
     private func clearLogFile() {
         if let url = Self.logFileURL { try? FileManager.default.removeItem(at: url) }
