@@ -3330,6 +3330,8 @@ extension ReceiverViewController {
             guard let self else { return }
             self.refreshAirPlayPlaybackStatus()
             self.log("当前声音路由：\(self.audioRouteDescription)")
+            // Changing the audio route implies a system panel was used; do not expect auto PiP.
+            self.pictureInPicture.cancelAutomaticExpectation()
             Self.noteUserRouteChoice()
             self.reloadVisibleSettings()
         }
