@@ -66,6 +66,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var wifiAutoSuppressedSSID: String?
     private var wifiAutoLastAction = Date.distantPast
     private var wifiAutoMatchSince: Date?
+    /// Bridges the gap when iOS tries to suspend us even though the audio session is playing.
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private let videoOutputSwitch = UISwitch()
     private let videoOutputPortField = UITextField()
     private let secureVideoOutputPortField = UITextField()
@@ -1718,6 +1720,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             log(CWL("无法保存身份导入结果：{1}", [String(describing: error.localizedDescription)]))
         }
     }
+
     @objc private func wifiAutoChanged() {
         UserDefaults.standard.set(wifiAutoSwitch.isOn, forKey: "wifiAutoStart")
         if wifiAutoSwitch.isOn {
@@ -2286,7 +2289,25 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         pictureInPicture.awaitAutomaticStart()
     }
+    private func beginBackgroundBridge() {
+        endBackgroundBridge()
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "CarWithin.keepAlive") { [weak self] in
+            guard let self else { return }
+            self.log(CWL("后台任务即将到期，重新申请以维持投屏"))
+            self.endBackgroundBridge()
+            if self.running { self.beginBackgroundBridge() }
+        }
+        if backgroundTaskID != .invalid { log(CWL("已申请后台任务，延长后台投屏存活")) }
+    }
+
+    private func endBackgroundBridge() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
+    }
+
     @objc private func becameActive() {
+        endBackgroundBridge()
         refreshNetworkAddresses()
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             self?.checkForUpdates(manual: false)
@@ -2427,6 +2448,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         DispatchQueue.main.async { [weak self] in self?.applyAppearance() }
     }
     @objc private func backgrounded() {
+        if running { beginBackgroundBridge() }
         updateCheckTask?.cancel()
         receiverBrowser.stop()
         guard running else { return }
