@@ -72,6 +72,7 @@ final class CarPlayMediaSession {
                     let output = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
                         connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort,
                         preferBluetooth: bluetoothAudio)
+                    onLog?(CWL("音频流 {1} 蓝牙伴音标志={2}", [String(describing: type), bluetoothAudio ? "开" : "关"]))
                     output.onLog = { [weak self] in self?.onLog?($0) }
                     // Keep calls and Siri on the iPhone; only intended playback goes to LAN viewers.
                     if let onBrowserAudio, !requestsMicrophone, !["telephony", "speechrecognition"].contains(audioType) {
