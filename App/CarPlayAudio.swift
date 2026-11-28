@@ -250,9 +250,12 @@ final class CarPlayAudio {
     }
 
     private func updateFeedback() {
-        guard let firstTimestamp, let player, let render = player.lastRenderTime,
-              let position = player.playerTime(forNodeTime: render) else { return }
-        let rendered = firstTimestamp &+ UInt32(truncatingIfNeeded: max(0, position.sampleTime))
+        // playerTime(forNodeTime:) raises an Objective-C exception (and kills the process with
+        // SIGABRT) when the node is not in a playable state; lastRenderTime alone is safe, and the
+        // node timeline already starts at zero when playback begins.
+        guard let firstTimestamp, let engine, engine.isRunning,
+              let player, player.isPlaying, let render = player.lastRenderTime else { return }
+        let rendered = firstTimestamp &+ UInt32(truncatingIfNeeded: max(0, render.sampleTime))
         feedbackLock.lock()
         renderedSampleTime = rendered
         feedbackLock.unlock()
