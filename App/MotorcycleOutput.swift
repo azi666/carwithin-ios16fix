@@ -159,11 +159,33 @@ final class MotorcycleOutput {
                 } catch {
                     if active {
                         onLog("\(profile.title)输出失败：\(error.localizedDescription)")
+                        probeInstrumentPorts()
                         report("\(profile.title)连接失败：\(error.localizedDescription)")
                     }
                 }
                 erya?.close(); yunmo?.close(); thinker?.close(); shouqu?.close()
                 queue.async { [self] in close() }
+            }
+        }
+
+        /// Walks the candidate ports so a failed handshake also reveals which protocol family the
+        /// instrument answers on (Yunmo 8200 vs Erya 11111/11113).
+        private func probeInstrumentPorts() {
+            let candidates: [(UInt16, String)] = [(8200, "Yunmo"), (11111, "Erya 画面"),
+                                                  (11113, "Erya 控制"), (8000, "通用"), (80, "HTTP")]
+            guard !targetAddress.isEmpty else { return }
+            for (port, label) in candidates {
+                DispatchQueue.global(qos: .utility).async { [self] in
+                    let started = ProcessInfo.processInfo.systemUptime
+                    var verdict = "无响应"
+                    if let socket = try? TailingSocket.create() {
+                        if (try? socket.connect(localIP: localAddress, remoteIP: targetAddress,
+                                                port: port, timeout: 1.2)) != nil { verdict = "开放" }
+                        socket.close()
+                    }
+                    let ms = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                    onLog("端口探测 \(targetAddress):\(port)（\(label)）→ \(verdict) · \(ms) ms")
+                }
             }
         }
 
