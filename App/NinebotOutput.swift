@@ -130,8 +130,8 @@ final class NinebotOutput {
                 report(sevenInch ? CWL("等待九号 7 寸仪表回应…") : CWL("等待九号仪表回应…"))
                 switch mode {
                 case .fourThreeInch: onLog(CWL("九号 4.3 寸：JPEG/RTP UDP 5012 · RTCP UDP 5013 · 480×272 · 最高 10 FPS"))
-                case .sevenInch: onLog(CWL("九号 7 寸：KCP/UDP 5012 · RTCP/UDP 5013 · 1024×600 · H.264 Baseline 3.1 · 25 FPS"))
-                case .fiveInch: onLog(CWL("九号 5 寸：UDP 5012/5013 · 848×480 · H.264 Baseline · 30 FPS"))
+                case .sevenInch: onLog(CWL("九号 7 寸：KCP/UDP 5012 · RTCP/UDP 5013 · 1024×600 · H.264 Baseline 3.1 · 25 FPS · 3.5 Mbps"))
+                case .fiveInch: onLog(CWL("九号 5 寸：UDP 5012/5013 · 848×480 · H.264 Baseline · 30 FPS · 3 Mbps"))
                 }
                 let timer = DispatchSource.makeTimerSource(queue: queue)
                 timer.schedule(deadline: .now(), repeating: .milliseconds(sevenInch ? 10 : usesJPEG ? 20 : 33), leeway: .milliseconds(3))
@@ -336,7 +336,8 @@ final class NinebotOutput {
                 if encoder == nil {
                     guard now - lastCodecFailure >= 0.5 else { return nil }
                     let format = sevenInch ? NinebotOutput.sevenInchFormat : (NinebotOutput.width, NinebotOutput.height, NinebotOutput.fps)
-                    encoder = try H264Encoder(width: format.0, height: format.1, fps: format.2, bitrate: sevenInch ? 2_000_000 : 1_500_000,
+                    // Text and maps were visibly soft at the old 1.5 Mbps; dashboards decode 2–4 Mbps fine.
+        encoder = try H264Encoder(width: format.0, height: format.1, fps: format.2, bitrate: sevenInch ? 3_500_000 : 3_000_000,
                                               profileLevel: sevenInch ? kVTProfileLevel_H264_Baseline_3_1 : kVTProfileLevel_H264_Baseline_AutoLevel) { [weak self] result in
                         guard let self else { return }
                         self.lock.withLock { self.encoded = result }
