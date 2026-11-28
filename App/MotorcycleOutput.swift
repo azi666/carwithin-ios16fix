@@ -72,6 +72,7 @@ final class MotorcycleOutput {
         private var lastKeyframe = -Double.infinity
         private var lastCodecFailure = -Double.infinity
         private var status = ""
+        private var controlProbe: MotorcycleControlProbe?
 
         init(queue: DispatchQueue, localAddress: String, targetAddress: String, device: UUID?,
              profile: MotorcycleProfile, eryaVideoPort: UInt16, eryaControlPort: UInt16, onState: @escaping (String) -> Void, onLog: @escaping (String) -> Void,
@@ -104,6 +105,11 @@ final class MotorcycleOutput {
                     guard active else { return }
                     encodeWidth = size.0; encodeHeight = size.1
                     report("仪表已连接，等待 CarPlay 画面…")
+                    if profile.transport == .yunmo {
+                        let probe = MotorcycleControlProbe(log: onLog)
+                        controlProbe = probe
+                        probe.start(local: localAddress, target: targetAddress, port: eryaControlPort)
+                    }
                     var first = true
                     var nextFrame = ProcessInfo.processInfo.systemUptime
                     while active {
@@ -163,6 +169,7 @@ final class MotorcycleOutput {
                         report("\(profile.title)连接失败：\(error.localizedDescription)")
                     }
                 }
+                controlProbe?.stop()
                 erya?.close(); yunmo?.close(); thinker?.close(); shouqu?.close()
                 queue.async { [self] in close() }
             }
@@ -340,5 +347,47 @@ final class MotorcycleOutput {
             encoder = nil
             latest = nil
         }
+    }
+}
+
+/// Read-only tap on the dash's control port. It never writes a byte and logs only event keys, so a
+/// dash that reports no touch at all can be told apart from one whose touch format we do not know.
+final class MotorcycleControlProbe: @unchecked Sendable {
+    private let log: (String) -> Void
+    private var socket: TailingSocket?
+    private var closed = false
+    private let lock = NSLock()
+    init(log: @escaping (String) -> Void) { self.log = log }
+
+    private var isClosed: Bool { lock.lock(); defer { lock.unlock() }; return closed }
+
+    func start(local: String, target: String, port: UInt16) {
+        guard !target.isEmpty, port != 0 else { return }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            do {
+                let sock = try TailingSocket.create()
+                lock.lock()
+                if closed { lock.unlock(); sock.close(); return }
+                socket = sock
+                lock.unlock()
+                try sock.connect(localIP: local, remoteIP: target, port: port, timeout: 2)
+                log("控制探测已连接 \(target):\(port)（只读，不发送任何数据）")
+                while !isClosed {
+                    let event = try EryaProtocol.readControl { try sock.readExactly($0, timeout: 8) }
+                    let fun = String(describing: event["fun"] ?? "-")
+                    let type = String(describing: event["type"] ?? "-")
+                    let keys = event.keys.sorted().joined(separator: ",")
+                    log("控制探测事件 fun=\(fun) type=\(type) keys=\(keys)")
+                }
+            } catch {
+                if !isClosed { log("控制探测结束：\(error.localizedDescription)") }
+            }
+            stop()
+        }
+    }
+
+    func stop() {
+        lock.lock(); closed = true; let sock = socket; socket = nil; lock.unlock()
+        sock?.close()
     }
 }
