@@ -126,6 +126,18 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var httpsExpanded: Bool { UserDefaults.standard.bool(forKey: httpsExpandedKey) }
     private let browserCard = UIStackView()
     private let zeehoCard = UIStackView()
+    private let motorcycleCard = UIStackView()
+    private let motorcycleCardStatus = UILabel()
+    private let motorcycleStatus = StatusLabel()
+    private let motorcycleAddressField = UITextField()
+    private let eryaVideoPortField = UITextField()
+    private let eryaControlPortField = UITextField()
+    private var motorcycleLoadedAddressKey: String?
+    private var motorcycleScanner: ThinkerRideBLE?
+    private var motorcycleScanGeneration = 0
+    private var motorcycleBluetoothKey: String { "motorcycleBLE-" + (outputMode.motorcycleProfile?.rawValue ?? "") }
+    private var motorcycleAddressKey: String { "motorcycleIP-" + (outputMode.motorcycleProfile?.rawValue ?? "") }
+    private func updateMotorcycleStatus(_ message: String) { motorcycleStatus.text = message; motorcycleCardStatus.text = message }
     private let zeehoCardStatus = UILabel()
     private let zeehoStatus = StatusLabel()
     private let zeehoAddressField = UITextField()
@@ -249,9 +261,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let headUnitOutput = ChoiceMenu(items: HeadUnitOutput.menuOrder.map(\.title))
     private enum HeadUnitOutput: Int {
         // Persisted in headUnitOutputV2. Append new modes after existing values.
-        case browser, carLife, airPlay, tailing, ninebot, zeeho, ninebotSeven, ninebot43, zeehoSEPlus, zeehoAE2, cfmoto5, cfmoto62
+        case browser, carLife, airPlay, tailing, ninebot, zeeho, ninebotSeven, ninebot43, zeehoSEPlus, zeehoAE2, cfmoto5, cfmoto62, cfmoto700MT, cfmoto800MT, cfmoto675SRR, benelliTRK, vogeDS800X, zontes368E, zontes368G, zontes703RR, qjSRT550, kove625X, moriniXCape1200, kove450Rally, kove800X, shouqu, zeehoAE4i, koveInstrument
         // Display order is independent of the persisted raw values above.
-        static let menuOrder: [Self] = [.browser, .carLife, .airPlay, .ninebot43, .ninebot, .ninebotSeven, .tailing, .zeeho, .zeehoSEPlus, .zeehoAE2, .cfmoto5, .cfmoto62]
+        static let menuOrder: [Self] = [.browser, .carLife, .airPlay, .ninebot43, .ninebot, .ninebotSeven, .tailing, .zeeho, .zeehoSEPlus, .zeehoAE2, .zeehoAE4i, .cfmoto5, .cfmoto62, .cfmoto700MT, .cfmoto800MT, .cfmoto675SRR, .shouqu, .benelliTRK, .vogeDS800X, .zontes368E, .zontes368G, .zontes703RR, .qjSRT550, .kove625X, .koveInstrument, .moriniXCape1200, .kove450Rally, .kove800X]
         var menuIndex: Int { Self.menuOrder.firstIndex(of: self)! }
         var title: String {
             switch self {
@@ -262,11 +274,13 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             case .ninebot: return CWL("九号 5 寸")
             case .ninebotSeven: return CWL("九号 7 寸")
             case .tailing: return CWL("台铃 4.3 寸")
+            case .zeehoAE4i: return CWL("极核 AE4i Pro+ 6.2 寸")
             case .zeeho: return CWL("极核 6.2 寸")
             case .zeehoSEPlus: return CWL("极核 SE+ 5/5.5 寸")
             case .zeehoAE2: return CWL("极核 AE2 Pro 5 寸")
             case .cfmoto5: return CWL("春风 5 寸")
             case .cfmoto62: return CWL("春风 6.2 寸")
+            default: return motorcycleProfile?.menuTitle ?? ""
             }
         }
         var ninebotMode: NinebotOutput.Mode? {
@@ -280,13 +294,34 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         var zeehoProfile: TailingDisplayProfile? {
             switch self {
             case .zeeho: return .zeeho62
+            case .zeehoAE4i: return .zeehoAE4i
             case .zeehoAE2: return .zeehoAE2
             case .zeehoSEPlus: return .zeehoSEPlus
             default: return nil
             }
         }
+        var motorcycleProfile: MotorcycleProfile? {
+            switch self {
+            case .cfmoto700MT: return .cfmoto700MT
+            case .cfmoto800MT: return .cfmoto800MT
+            case .cfmoto675SRR: return .cfmoto675SRR
+            case .benelliTRK: return .benelliTRK
+            case .vogeDS800X: return .vogeDS800X
+            case .zontes368E: return .zontes368E
+            case .zontes368G: return .zontes368G
+            case .zontes703RR: return .zontes703RR
+            case .qjSRT550: return .qjSRT550
+            case .kove625X: return .kove625X
+            case .moriniXCape1200: return .moriniXCape1200
+            case .kove450Rally: return .kove450Rally
+            case .kove800X: return .kove800X
+            case .koveInstrument: return .koveInstrument
+            case .shouqu: return .shouqu
+            default: return nil
+            }
+        }
         var cfmoto: Bool { self == .cfmoto5 || self == .cfmoto62 }
-        var usesInstrumentWiFi: Bool { cfmoto || self == .tailing || zeehoProfile != nil || ninebotMode != nil }
+        var usesInstrumentWiFi: Bool { motorcycleProfile != nil || cfmoto || self == .tailing || zeehoProfile != nil || ninebotMode != nil }
     }
     private var airPlayStreamID: UUID?
     private var airPlayStreamURL: URL?
@@ -427,6 +462,9 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         ipField.text = ReceiverConfiguration.localIPv4Addresses().first
         let selectedPreset = WiFiPresetStore.selected()
         ssidField.text = selectedPreset?.ssid ?? UserDefaults.standard.string(forKey: "wifiSSID")
+        motorcycleAddressField.keyboardType = .decimalPad
+        motorcycleAddressField.addTarget(self, action: #selector(saveMotorcycleAddress), for: .editingDidEnd)
+        loadMotorcycleAddress()
         ssidField.addTarget(self, action: #selector(networkNameChanged), for: .editingChanged)
         ssidField.addTarget(self, action: #selector(loadWiFiPassword), for: .editingDidEnd)
         channelField.text = String(Int(selectedPreset?.channel ?? UInt8(UserDefaults.standard.object(forKey: "wifiChannel") as? Int ?? 36)))
@@ -593,6 +631,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             self?.ninebotVehicleStatus.text = status
         }
         stack.addArrangedSubview(ninebotCard)
+        configureConnectionCard(motorcycleCard, title: CWL("摩托车仪表连接"), symbol: "scooter", color: .systemTeal,
+            instructions: CWL("新增车型待实测。加入仪表 Wi-Fi 后启动 CarPlay，连接前查看当前车型的输出设置。"), status: motorcycleCardStatus)
+        let motorcycleSettings = UIButton(type: .system)
+        motorcycleSettings.configuration = .tinted(); motorcycleSettings.configuration?.title = CWL("连接设置")
+        motorcycleSettings.addAction(UIAction { [weak self] _ in self?.revealSettings(output: true) }, for: .touchUpInside)
+        motorcycleCard.addArrangedSubview(motorcycleSettings); stack.addArrangedSubview(motorcycleCard)
         configureConnectionCard(tailingCard, title: CWL("台铃 4.3 寸连接"), symbol: "scooter", color: .systemOrange,
             instructions: CWL("iPhone 加入仪表的 Wi-Fi，打开仪表投屏，再启动本机 CarPlay。画面在仪表上显示，操作在 iPhone 上完成。"),
             status: tailingCardStatus)
@@ -731,6 +775,10 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         videoSurface.onTouches = { [weak self] points in
             self?.receiver.touches(source: "local", points)
             self?.refreshFullscreenExitButton()
+        }
+        receiver.onMotorcycleState = { [weak self] message in
+            guard let self, self.running, self.outputMode.motorcycleProfile != nil else { return }
+            self.updateMotorcycleStatus(message)
         }
         receiver.onZeehoState = { [weak self] message in
             guard let self, self.running, self.outputMode.zeehoProfile != nil else { return }
@@ -939,6 +987,10 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             // 按偶数对齐：H.264 4:2:0 不接受 515 这样的奇数高度。
             return DisplayPlan(width: cfmoto.encodeWidth, height: cfmoto.encodeHeight,
                                fps: cfmoto.fps, codec: .h264, iconWidthMM: icon)
+        }
+        if let profile = outputMode.motorcycleProfile {
+            let icon = ReceiverConfiguration.iconSizes[max(0, iconSizeControl.selectedSegmentIndex)].widthMM
+            return DisplayPlan(width: profile.width, height: profile.height, fps: 30, codec: .h264, iconWidthMM: icon)
         }
         if let profile = outputMode.zeehoProfile {
             let icon = ReceiverConfiguration.iconSizes[max(0, iconSizeControl.selectedSegmentIndex)].widthMM
@@ -1198,6 +1250,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if !running {
             updateCfmotoStatus("等待启动 CarPlay · 仪表 IP：\(cfmotoAddressField.text?.isEmpty == false ? cfmotoAddressField.text! : "自动取网关")")
         }
+        motorcycleCard.isHidden = !showsLocalOutput || outputMode.motorcycleProfile == nil
         tailingCard.isHidden = !showsLocalOutput || outputMode != .tailing
         if !running { updateTailingStatus(CWL("等待启动 CarPlay · 仪表 IP：{1}", [String(describing: tailingAddressField.text ?? "192.168.1.1")])) }
         carLifeCard.isHidden = !showsLocalOutput || outputMode != .carLife
@@ -1282,6 +1335,15 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if outputMode == .tailing {
             config.tailingAddress = (tailingAddressField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
+        }
+        if let profile = outputMode.motorcycleProfile {
+            config.motorcycleProfile = profile
+            config.motorcycleAddress = (motorcycleAddressField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            config.motorcycleBluetoothID = UserDefaults.standard.string(forKey: motorcycleBluetoothKey).flatMap(UUID.init(uuidString:))
+            if profile.transport == .erya {
+                config.eryaVideoPort = UInt16((eryaVideoPortField.text ?? "").trimmingCharacters(in: .whitespaces)) ?? 11111
+                config.eryaControlPort = UInt16((eryaControlPortField.text ?? "").trimmingCharacters(in: .whitespaces)) ?? 11113
+            }
         }
         config.carLifeEnabled = outputMode == .carLife
         let carLifeAddress = (carLifeAddressField.text ?? "").trimmingCharacters(in: .whitespaces)
@@ -1875,6 +1937,98 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
     }
 
+    private func loadMotorcycleAddress() {
+        motorcycleLoadedAddressKey = motorcycleAddressKey
+        eryaVideoPortField.text = UserDefaults.standard.string(forKey: motorcycleAddressKey + "-videoPort") ?? "11111"
+        eryaControlPortField.text = UserDefaults.standard.string(forKey: motorcycleAddressKey + "-controlPort") ?? "11113"
+        motorcycleAddressField.text = UserDefaults.standard.string(forKey: motorcycleAddressKey) ?? outputMode.motorcycleProfile?.defaultAddress ?? ""
+        updateMotorcycleStatus(CWL("新增车型待实测。"))
+    }
+    @objc private func saveMotorcycleAddress() {
+        guard let key = motorcycleLoadedAddressKey else { return }
+        UserDefaults.standard.set(motorcycleAddressField.text ?? "", forKey: key)
+        UserDefaults.standard.set(eryaVideoPortField.text ?? "", forKey: key + "-videoPort")
+        UserDefaults.standard.set(eryaControlPortField.text ?? "", forKey: key + "-controlPort")
+    }
+    private func scanMotorcycleBluetooth() {
+        guard !running, outputMode.motorcycleProfile?.transport == .thinkerRide else { return }
+        motorcycleScanner?.stop(); motorcycleScanGeneration += 1
+        let token = motorcycleScanGeneration, key = motorcycleBluetoothKey
+        let scanner = ThinkerRideBLE(); motorcycleScanner = scanner
+        var devices: [UUID: ThinkerRideBLE.Device] = [:]
+        updateMotorcycleStatus(CWL("正在扫描仪表蓝牙，请等待 6 秒…"))
+        scanner.scan(found: { device in devices[device.id] = device }, failure: { [weak self] message in
+            guard let self, self.motorcycleScanGeneration == token else { return }
+            self.updateMotorcycleStatus(message)
+        })
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self, self.motorcycleScanGeneration == token, !self.running else { scanner.stop(); return }
+            scanner.stop(); self.motorcycleScanner = nil
+            guard !devices.isEmpty else { self.updateMotorcycleStatus(CWL("未找到仪表蓝牙，请打开仪表互联页面后重试。")); return }
+            let alert = UIAlertController(title: CWL("选择自己的仪表"), message: CWL("启动 CarPlay 时将连接并配对此仪表。"), preferredStyle: .alert)
+            for item in devices.values.sorted(by: { $0.name == $1.name ? $0.id.uuidString < $1.id.uuidString : $0.name < $1.name }) {
+                alert.addAction(UIAlertAction(title: item.name + " · " + item.id.uuidString.suffix(6), style: .default) { [weak self] _ in
+                    guard let self, !self.running, self.motorcycleScanGeneration == token else { return }
+                    UserDefaults.standard.set(item.id.uuidString, forKey: key)
+                    UserDefaults.standard.set(item.name, forKey: key + "-name")
+                    self.updateMotorcycleStatus(CWL("已选择仪表：{1}", [item.name])); self.reloadVisibleSettings()
+                })
+            }
+            alert.addAction(UIAlertAction(title: CWL("取消"), style: .cancel))
+            var presenter: UIViewController = self
+            while let presented = presenter.presentedViewController { presenter = presented }
+            presenter.present(alert, animated: true)
+        }
+    }
+    @objc private func headUnitOutputChanged() {
+        saveMotorcycleAddress()
+        motorcycleScanGeneration += 1; motorcycleScanner?.stop(); motorcycleScanner = nil
+        loadMotorcycleAddress()
+        saveHeadUnitOutput()
+        refreshNetworkSummary()
+        refreshVideoOutputSummary()
+        updateVideoAspect()
+        reloadVisibleSettings()
+    }
+    @objc private func audioSettingChanged() {
+        UserDefaults.standard.set(selectedSoundOutput.rawValue, forKey: "soundOutput")
+    }
+    @objc private func receiverNameChanged() {
+        guard !running else { return }
+        UserDefaults.standard.set(nameField.text ?? "CarWithin", forKey: "receiverName")
+    }
+
+    /// Shows settings and, when needed, takes the user to the relevant connection settings.
+    func revealSettings(wifi: Bool = false, output: Bool = false, vehicle: Bool = false) {
+        view.endEditing(true)
+        if let navigation = settingsNavigation {
+            if wifi, activeWiFiForm == nil {
+                navigation.popToRootViewController(animated: false)
+                navigation.pushViewController(wifiPage(), animated: true)
+            }
+            return
+        }
+        let root = rootSettingsPage()
+        let navigation = UINavigationController(rootViewController: root)
+        navigation.navigationBar.prefersLargeTitles = false
+        root.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
+            self?.settingsNavigation?.view.endEditing(true)
+            self?.settingsNavigation?.dismiss(animated: true) { self?.settingsDismissed() }
+        })
+        navigation.presentationController?.delegate = self
+        if wifi { navigation.pushViewController(wifiPage(), animated: false) }
+        if output { navigation.pushViewController(headUnitPage(), animated: false) }
+        settingsNavigation = navigation
+        present(navigation, animated: true)
+    }
+
+    fileprivate func settingsDismissed() {
+        view.endEditing(true)
+        UserDefaults.standard.set(nameField.text ?? "CarWithin", forKey: "receiverName")
+        saveHeadUnitOutput()
+        refreshNetworkSummary(); refreshVideoOutputSummary(); updateVideoAspect()
+        updatePictureInPicturePolicy()
+    }
     private func stop(keepVehicleNavigation: Bool = false) {
         // Record who asked for the stop. Without this a session that ends while the app is
         // backgrounded is indistinguishable from a manual stop, a receiver failure or a
@@ -3053,6 +3207,22 @@ extension ReceiverViewController {
                     ]),
                     SettingsSection(CWL("使用说明"), instructions)
                 ]
+            default:
+                guard let profile = outputMode.motorcycleProfile else { return [] }
+                var rows: [SettingsRow] = [.info(CWL("仪表画面"), profile.detail),
+                    .field(CWL("仪表 IP 地址"), motorcycleAddressField, placeholder: profile.defaultAddress.isEmpty ? CWL("留空自动查找") : profile.defaultAddress), .note(motorcycleStatus)]
+                if profile.transport == .erya {
+                    rows.append(.field(CWL("画面 TCP 端口"), eryaVideoPortField, placeholder: "11111"))
+                    rows.append(.field(CWL("控制 TCP 端口"), eryaControlPortField, placeholder: "11113"))
+                }
+                if profile.transport == .thinkerRide {
+                    let name = UserDefaults.standard.string(forKey: motorcycleBluetoothKey + "-name") ?? CWL("尚未选择")
+                    rows.append(.info(CWL("仪表蓝牙"), name))
+                    rows.append(.action(CWL("扫描并选择仪表蓝牙"), icon: ("antenna.radiowaves.left.and.right", .systemBlue)) { [unowned self] in
+                        self.scanMotorcycleBluetooth()
+                    })
+                }
+                return [SettingsSection(profile.title, footer: profile.instructions, rows)]
             }
         }
     }
@@ -3069,6 +3239,7 @@ extension ReceiverViewController {
     private func prepareExternalOutput(configuration: ReceiverConfiguration) {
         if configuration.zeehoAddress != nil { updateZeehoStatus(CWL("正在连接极核仪表…")) }
         if configuration.cfmotoProfile != nil { updateCfmotoStatus("正在推流到春风仪表…") }
+        if configuration.motorcycleProfile != nil { updateMotorcycleStatus(CWL("正在连接摩托车仪表…")) }
         if configuration.ninebotAddress != nil { updateNinebotStatus(CWL("正在连接九号仪表…")) }
         if configuration.tailingAddress != nil { updateTailingStatus(CWL("正在连接台铃仪表…")) }
         if configuration.carLifeEnabled {
