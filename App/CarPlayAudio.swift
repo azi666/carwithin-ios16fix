@@ -162,7 +162,13 @@ final class CarPlayAudio {
                         onLog?(CWL("蓝牙伴音：本机 CarPlay 会话期间系统独占音频路由，已改用扬声器；蓝牙要等会话结束后才能用"))
                     }
                 }
-                if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
+                let userChoseExternalRoute = UserDefaults.standard.string(forKey: "chosenAudioRoute") != nil
+                if userChoseExternalRoute,
+                   session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
+                    onLog?(CWL("音频：已记录外部路由选择，但系统本次仍把音频留在 CarPlay 通道"))
+                }
+                if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }),
+                   !userChoseExternalRoute {
                     // In the same-device session CarAudio is our own virtual CarPlay receiver.
                     // Feeding decoded audio back into that route leaves the physical speaker silent.
                     if session.category != .playAndRecord {
