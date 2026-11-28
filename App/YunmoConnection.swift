@@ -56,6 +56,12 @@ final class YunmoConnection: @unchecked Sendable {
                 let f = try YunmoProtocol.read(diagnostic: log) { try sock.readExactly($0, timeout: 15) }
                 if f.command != 0xa0 || f.payload.first != 0 {
                     log(String(format: "Yunmo RX cmd=%02x payloadBytes=%d opcode=%02x", f.command, f.payload.count, f.payload.first ?? 0))
+                    // Touch input, if this dash sends any, would arrive as a command we do not know.
+                    // Dump small payloads so the format becomes readable instead of guessed.
+                    if ![0x32, 0x41, 0xa0].contains(f.command), !f.payload.isEmpty, f.payload.count <= 64 {
+                        let hex = f.payload.map { String(format: "%02x", $0) }.joined(separator: " ")
+                        log("Yunmo 未知命令载荷 cmd=\(String(format: "%02x", f.command))：\(hex)")
+                    }
                 }
                 condition.lock()
                 switch f.command {
