@@ -3330,7 +3330,26 @@ extension ReceiverViewController {
             guard let self else { return }
             self.refreshAirPlayPlaybackStatus()
             self.log("当前声音路由：\(self.audioRouteDescription)")
+            Self.noteUserRouteChoice()
             self.reloadVisibleSettings()
+        }
+    }
+
+    /// Remembers a route the user picked in the system picker (Bluetooth, AirPlay, headphones…)
+    /// so the CarPlay loopback guard stops pulling audio back to the built-in speaker.
+    static func noteUserRouteChoice() {
+        let external: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE,
+                                               .airPlay, .headphones, .usbAudio, .HDMI]
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        let defaults = UserDefaults.standard
+        if let picked = outputs.first(where: { external.contains($0.portType) }) {
+            if defaults.string(forKey: "chosenAudioRoute") != picked.portType.rawValue {
+                defaults.set(picked.portType.rawValue, forKey: "chosenAudioRoute")
+                NSLog("[CarWithin] 记录外部音频路由：%@", picked.portName)
+            }
+        } else if outputs.contains(where: { $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }) {
+            // Back on the phone speaker: forget the choice so the loopback guard works normally.
+            defaults.removeObject(forKey: "chosenAudioRoute")
         }
     }
 
