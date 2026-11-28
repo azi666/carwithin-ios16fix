@@ -141,7 +141,7 @@ final class CarPlayAudio {
                     bluetoothChecked = true
                     // A head unit without its own amplifier needs the sound on Bluetooth. Ask for
                     // A2DP and check where the system actually routed it before falling back.
-                    var bt = AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+                    var bt: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
                     if BackgroundKeepAlive.holdsAudioSession { bt.insert(.mixWithOthers) }
                     try session.setCategory(.playback, mode: .default, options: bt)
                     try session.setActive(true)
