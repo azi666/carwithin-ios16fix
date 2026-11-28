@@ -624,6 +624,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         ninebotCard.addArrangedSubview(ninebotVehicleButton)
         // Route the BLE scanning/pairing/authentication trail into the app log so it can be
         // diagnosed without guessing from the one-line status label.
+        let launchVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let launchBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+        log(CWL("CarWithin 启动：版本 {1}（{2}）提交 {3}｜iOS {4}｜机型 {5}",
+            [launchVersion, launchBuild, Self.buildCommit,
+             UIDevice.current.systemVersion, UIDevice.current.model]))
         ninebotVehicle.onLog = { [weak self] in self?.log($0) }
         ninebotVehicleObservation = ninebotVehicle.$status.combineLatest(ninebotVehicle.$garage).sink { [weak self] status, garage in
             self?.ninebotVehicleButton.configuration?.subtitle = garage.selected?.name
@@ -3196,18 +3201,27 @@ extension ReceiverViewController {
         ]
     }
 
+    /// Short commit this binary was built from, stamped by the build workflow.
+    static var buildCommit: String {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "CWBuiltFrom") as? String ?? "dev"
+        let at = Bundle.main.object(forInfoDictionaryKey: "CWBuiltAt") as? String ?? ""
+        return at.isEmpty ? raw : "\(raw) @ \(at)"
+    }
+
     /// Snapshot of everything that affects a session, so a log explains what was actually used
     /// instead of requiring the tester to remember their settings.
     private func logSessionSnapshot(_ config: ReceiverConfiguration) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
         log(CWL("==== 会话配置快照 ===="))
-        log(CWL("版本 {1}（{2}）｜iOS {3}｜机型 {4}｜本机地址 {5}",
-            [version, build, UIDevice.current.systemVersion, UIDevice.current.model, config.address]))
-        log(CWL("输出模式 {1}｜画面 {2}×{3} @ {4} FPS {5}｜声音 {6}",
+        log(CWL("版本 {1}（{2}）提交 {3}｜iOS {4}｜机型 {5}｜本机地址 {6}",
+            [version, build, Self.buildCommit, UIDevice.current.systemVersion,
+             UIDevice.current.model, config.address]))
+        log(CWL("输出模式 {1}｜画面 {2}×{3} @ {4} FPS {5}｜声音 {6}｜蓝牙路由 {7}",
             [headUnitOutput.selectedTitle, String(config.width), String(config.height),
              String(config.maxFPS), String(describing: config.videoCodec),
-             soundOutput == .phone ? CWL("iPhone") : soundOutput.title]))
+             soundOutput == .phone ? CWL("iPhone") : soundOutput.title,
+             config.bluetoothAudio ? CWL("开") : CWL("关")]))
         log(CWL("Wi-Fi「{1}」信道 {2}｜浏览器输出 {3}｜后台保持 {4}",
             [config.ssid, String(config.wifiChannel),
              videoOutputSwitch.isOn ? CWL("开（端口 {1}）", [config.videoOutputPort.map(String.init) ?? "-"]) : CWL("关"),
