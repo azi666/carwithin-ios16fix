@@ -1980,55 +1980,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             presenter.present(alert, animated: true)
         }
     }
-    @objc private func headUnitOutputChanged() {
-        saveMotorcycleAddress()
-        motorcycleScanGeneration += 1; motorcycleScanner?.stop(); motorcycleScanner = nil
-        loadMotorcycleAddress()
-        saveHeadUnitOutput()
-        refreshNetworkSummary()
-        refreshVideoOutputSummary()
-        updateVideoAspect()
-        reloadVisibleSettings()
-    }
-    @objc private func audioSettingChanged() {
-        UserDefaults.standard.set(selectedSoundOutput.rawValue, forKey: "soundOutput")
-    }
-    @objc private func receiverNameChanged() {
-        guard !running else { return }
-        UserDefaults.standard.set(nameField.text ?? "CarWithin", forKey: "receiverName")
-    }
-
-    /// Shows settings and, when needed, takes the user to the relevant connection settings.
-    func revealSettings(wifi: Bool = false, output: Bool = false, vehicle: Bool = false) {
-        view.endEditing(true)
-        if let navigation = settingsNavigation {
-            if wifi, activeWiFiForm == nil {
-                navigation.popToRootViewController(animated: false)
-                navigation.pushViewController(wifiPage(), animated: true)
-            }
-            return
-        }
-        let root = rootSettingsPage()
-        let navigation = UINavigationController(rootViewController: root)
-        navigation.navigationBar.prefersLargeTitles = false
-        root.navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
-            self?.settingsNavigation?.view.endEditing(true)
-            self?.settingsNavigation?.dismiss(animated: true) { self?.settingsDismissed() }
-        })
-        navigation.presentationController?.delegate = self
-        if wifi { navigation.pushViewController(wifiPage(), animated: false) }
-        if output { navigation.pushViewController(headUnitPage(), animated: false) }
-        settingsNavigation = navigation
-        present(navigation, animated: true)
-    }
-
-    fileprivate func settingsDismissed() {
-        view.endEditing(true)
-        UserDefaults.standard.set(nameField.text ?? "CarWithin", forKey: "receiverName")
-        saveHeadUnitOutput()
-        refreshNetworkSummary(); refreshVideoOutputSummary(); updateVideoAspect()
-        updatePictureInPicturePolicy()
-    }
     private func stop(keepVehicleNavigation: Bool = false) {
         // Record who asked for the stop. Without this a session that ends while the app is
         // backgrounded is indistinguishable from a manual stop, a receiver failure or a
@@ -2540,6 +2491,9 @@ extension ReceiverViewController {
         reloadVisibleSettings()
     }
     @objc private func headUnitOutputChanged() {
+        saveMotorcycleAddress()
+        motorcycleScanGeneration += 1; motorcycleScanner?.stop(); motorcycleScanner = nil
+        loadMotorcycleAddress()
         saveHeadUnitOutput()
         refreshVideoOutputSummary()
         updateVideoAspect()
