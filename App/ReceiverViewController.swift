@@ -1040,7 +1040,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         switch frameRateControl.selectedSegmentIndex {
         case 1: fps = 30
         case 2: fps = 60
-        default: fps = screen.map { (1..<45).contains($0.refreshHz) ? 30 : 60 } ?? 60
+        default: fps = screen.map { $0.refreshHz > 0 && $0.refreshHz < 55 ? 30 : 60 } ?? 60
         }
         if lightLevel >= 1 { fps = min(fps, 30) }
         if outputMode != .browser { fps = min(fps, 30) }
