@@ -74,7 +74,13 @@ jobs:
           # Stamp every build so the on-device "About" screen identifies which binary is running.
           BUILD_STAMP=$(date +%y%m%d.%H%M)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_STAMP" "$APP/Info.plist"
+          # Record the exact commit so a log can be matched to source without guessing.
+          /usr/libexec/PlistBuddy -c "Delete :CWBuiltFrom" "$APP/Info.plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CWBuiltFrom string ${GITHUB_SHA:0:7}" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Delete :CWBuiltAt" "$APP/Info.plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CWBuiltAt string $(date -u +%Y-%m-%dT%H:%MZ)" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CWBuiltFrom" "$APP/Info.plist"
           ls -l "$APP"/certificate.p7b "$APP"/leaf.cer "$APP"/private.x963
           # Ad-hoc sign so the Wi-Fi entitlement actually reaches the binary: without it
           # NEHotspotNetwork.fetchCurrent returns nil and the app cannot read the SSID/channel.
