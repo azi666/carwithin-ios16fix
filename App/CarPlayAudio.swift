@@ -150,7 +150,15 @@ final class CarPlayAudio {
                     // A2DP and check where the system actually routed it before falling back.
                     var bt: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
                     if BackgroundKeepAlive.holdsAudioSession { bt.insert(.mixWithOthers) }
-                    try session.setCategory(.playback, mode: .default, options: bt)
+                    // .allowBluetoothA2DP is only legal with a duplex category; combining it with
+                    // .playback raises -50 (paramErr) and silently aborted the route switch.
+                    do {
+                        try session.setCategory(.playAndRecord, mode: .default, options: bt)
+                    } catch {
+                        let code = (error as NSError).code
+                        onLog?(CWL("蓝牙伴音：设置 A2DP 类别失败（错误码 {1}）", [String(code)]))
+                        throw error
+                    }
                     try session.setActive(true)
                     let outs = session.currentRoute.outputs
                     let bluetoothPorts: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
