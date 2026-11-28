@@ -90,6 +90,7 @@ final class CarPlayAudio {
     private let preferBluetooth: Bool
     /// A2DP routing is probed once per stream: retrying every packet would spam the log.
     private var bluetoothChecked = false
+    private var bluetoothProbed = false
     init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, silent: Bool = false, preferBluetooth: Bool = false) throws {
         self.silent = silent; self.preferBluetooth = preferBluetooth
         self.queue = Self.renderQueue; self.connectionID = connectionID; self.format = format
@@ -137,8 +138,14 @@ final class CarPlayAudio {
                     try session.setCategory(category, mode: .default, options: options)
                 }
                 try session.setActive(true)
-                if preferBluetooth && !bluetoothChecked {
+                if !bluetoothChecked {
                     bluetoothChecked = true
+                    onLog?(CWL("音频会话：preferBluetooth={1} 类别={2} 当前路由={3}",
+                        [preferBluetooth ? "true" : "false", String(describing: session.category.rawValue),
+                         session.currentRoute.outputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")]))
+                }
+                if preferBluetooth, !bluetoothProbed {
+                    bluetoothProbed = true
                     // A head unit without its own amplifier needs the sound on Bluetooth. Ask for
                     // A2DP and check where the system actually routed it before falling back.
                     var bt: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
