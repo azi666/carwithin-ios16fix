@@ -47,9 +47,15 @@ enum YunmoProtocol {
         }
         let body = try read(length), checksum = try read(1)[0]
         let sum = (Data(h) + body).reduce(UInt8(0), &+)
-        guard sum == checksum else {
-            diagnostic(String(format: "Yunmo checksum mismatch header=%@ payloadBytes=%d calculated=%02x received=%02x skipped=%d", headerHex, length, sum, checksum, slips))
-            throw TailingError.protocolFailure("Yunmo 校验失败")
+        if sum != checksum {
+            // Do not abort the session on a single mismatch: dumping the payload and continuing is
+            // the only way to learn what this dash actually speaks without a packet capture.
+            let head = body.prefix(48).map { String(format: "%02x", $0) }.joined(separator: " ")
+            let tail = body.suffix(8).map { String(format: "%02x", $0) }.joined(separator: " ")
+            let ascii = String(decoding: body.prefix(48).map { (32...126).contains($0) ? $0 : UInt8(46) }, as: UTF8.self)
+            diagnostic(String(format: "Yunmo 校验不符 header=%@ 载荷=%d 计算=%02x 收到=%02x", headerHex, length, sum, checksum))
+            diagnostic("Yunmo 载荷头 48 字节：\(head)")
+            diagnostic("Yunmo 载荷尾 8 字节：\(tail)｜ASCII：\(ascii)")
         }
         if slips > 0 { diagnostic("Yunmo resynchronized after \(slips) bytes") }
         return Frame(command: h[0], payload: body)
