@@ -67,6 +67,13 @@ final class CarPlayPictureInPicture: NSObject {
         cancelStartDeadline()
     }
 
+    /// Drops a pending "the system should start PiP by itself" expectation, e.g. when the user is
+    /// only opening the audio route picker.
+    func cancelAutomaticExpectation() {
+        guard awaitingSystemStart || waitingForReadiness else { return }
+        clearStartState()
+    }
+
     func cancelPendingStart() {
         guard waitingForReadiness else { return }
         waitingForReadiness = false
@@ -115,7 +122,12 @@ final class CarPlayPictureInPicture: NSObject {
         cancelStartDeadline()
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.isActive else { return }
+            // A system panel (route picker, Control Center) also reports "resign active" for a few
+            // seconds. Only warn when the app really left the foreground, otherwise the user sees a
+            // failure notice while nothing is wrong.
+            let leftForeground = UIApplication.shared.applicationState != .active
             self.clearStartState()
+            guard leftForeground else { return }
             self.onLog?(message)
             self.onFailure?()
         }
