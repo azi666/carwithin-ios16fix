@@ -65,6 +65,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var wifiAutoTask: Task<Void, Never>?
     private var wifiAutoSuppressedSSID: String?
     private var wifiAutoLastAction = Date.distantPast
+    private var wifiAutoMatchSince: Date?
     private let videoOutputSwitch = UISwitch()
     private let videoOutputPortField = UITextField()
     private let secureVideoOutputPortField = UITextField()
@@ -897,6 +898,15 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             }
         }
         sameDevice.onLog = { [weak self] in self?.log($0) }
+        receiver.onNegotiationStall = { [weak self] mediaNegotiated in
+            guard let self, self.running else { return }
+            self.log(mediaNegotiated
+                ? CWL("iPhone 未请求视频流，重启会话")
+                : CWL("iPhone 卡在媒体协商（切换网络后的冷却），准备自动重试"))
+            self.stop()
+            self.isRetryingNetwork = true
+            self.scheduleNetworkRetryIfNeeded()
+        }
         sameDevice.onFinished = { [weak self] message in
             self?.stop()
             self?.statusLabel.text = message
@@ -918,7 +928,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 // event is what we get, so read the SSID right away and again a few times while
                 // the association settles.
                 self.log(CWL("Wi-Fi 路径变化（可用={1}），检查是否已连上预设网络", [path.status == .satisfied ? CWL("是") : CWL("否")]))
-                if path.status != .satisfied { self.wifiAutoSuppressedSSID = nil }
+                if path.status != .satisfied { self.wifiAutoSuppressedSSID = nil; self.wifiAutoMatchSince = nil }
                 for delay in [0.0, 1.5, 4.0, 8.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                         self?.checkWiFiAutoTrigger()
@@ -1763,13 +1773,22 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         // Start only. Stopping automatically proved far more harmful than useful: a single
         // unreadable SSID reading used to kill a running session, so the user stops it manually.
         guard ssid == target else {
+            wifiAutoMatchSince = nil
             if wifiAutoSuppressedSSID != nil { wifiAutoSuppressedSSID = nil }
             return
         }
+        // Wait until the association has been stable for a while. Starting one second after the
+        // network appears is exactly when iOS still refuses media negotiation after a Wi-Fi change.
+        if wifiAutoMatchSince == nil {
+            wifiAutoMatchSince = Date()
+            log(CWL("自动启动：已进入预设 Wi-Fi「{1}」，等待网络稳定 10 秒后再启动", [target]))
+        }
+        guard let matchedAt = wifiAutoMatchSince,
+              Date().timeIntervalSince(matchedAt) >= 10 else { return }
         guard !running, !waitingForNetwork, presentedViewController == nil,
               wifiAutoSuppressedSSID != target else { return }
         wifiAutoLastAction = Date()
-        log(CWL("自动启动：已连上预设 Wi-Fi「{1}」", [target]))
+        log(CWL("自动启动：网络已稳定，启动 CarPlay（预设「{1}」）", [target]))
         toggleReceiver()
     }
 
