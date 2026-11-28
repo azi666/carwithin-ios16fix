@@ -65,8 +65,6 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var wifiAutoTask: Task<Void, Never>?
     private var wifiAutoSuppressedSSID: String?
     private var wifiAutoLastAction = Date.distantPast
-    private var wifiAutoMismatchSSID: String?
-    private var wifiAutoMismatchCount = 0
     private let videoOutputSwitch = UISwitch()
     private let videoOutputPortField = UITextField()
     private let secureVideoOutputPortField = UITextField()
@@ -1706,7 +1704,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             stopWiFiAutoMonitoring()
             if !running { keepAlive.stop() }
         }
-        log(wifiAutoSwitch.isOn ? CWL("自动启动已开启：连上预设 Wi-Fi 时自动启动 CarPlay")
+        log(wifiAutoSwitch.isOn ? CWL("自动启动已开启：连上预设 Wi-Fi 时自动启动 CarPlay（只自动启动，不会自动停止）")
                                 : CWL("自动启动已关闭"))
     }
 
@@ -1748,25 +1746,17 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             // treated as "left the network": that stopped CarPlay every 25 seconds.
             return
         }
-        if ssid == target {
-            wifiAutoMismatchSSID = nil; wifiAutoMismatchCount = 0
-            guard !running, !waitingForNetwork, presentedViewController == nil,
-                  wifiAutoSuppressedSSID != target else { return }
-            wifiAutoLastAction = Date()
-            log(CWL("自动启动：已连上预设 Wi-Fi「{1}」", [target]))
-            toggleReceiver()
-        } else {
-            // Require three consecutive readings of the same other network before stopping, so a
-            // single glitchy sample cannot kill a running session.
-            if wifiAutoMismatchSSID == ssid { wifiAutoMismatchCount += 1 }
-            else { wifiAutoMismatchSSID = ssid; wifiAutoMismatchCount = 1 }
+        // Start only. Stopping automatically proved far more harmful than useful: a single
+        // unreadable SSID reading used to kill a running session, so the user stops it manually.
+        guard ssid == target else {
             if wifiAutoSuppressedSSID != nil { wifiAutoSuppressedSSID = nil }
-            guard running, wifiAutoMismatchCount >= 3 else { return }
-            wifiAutoLastAction = Date()
-            wifiAutoMismatchCount = 0
-            log(CWL("自动停止：已离开预设 Wi-Fi「{1}」（连续 3 次读到「{2}」）", [target, ssid]))
-            stop()
+            return
         }
+        guard !running, !waitingForNetwork, presentedViewController == nil,
+              wifiAutoSuppressedSSID != target else { return }
+        wifiAutoLastAction = Date()
+        log(CWL("自动启动：已连上预设 Wi-Fi「{1}」", [target]))
+        toggleReceiver()
     }
 
     @objc private func toggleReceiver() {
@@ -2888,7 +2878,7 @@ extension ReceiverViewController {
                 SettingsSection(CWL("后台与画中画"), footer: CWL("锁屏前，请在 iPhone「设置 › 通用 › CarPlay › CarWithin」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。"), [
                     .control(CWL("锁屏与后台继续运行"), icon: ("lock.fill", .systemPurple), keepAliveSwitch),
                     .control(CWL("画中画开启时机"), icon: ("pip.fill", .systemIndigo), pictureInPictureTiming),
-                    .control(CWL("连上预设 Wi-Fi 自动启动"), icon: ("wifi", .systemBlue), wifiAutoSwitch)
+                    .control(CWL("连上预设 Wi-Fi 自动启动（不自动停止）"), icon: ("wifi", .systemBlue), wifiAutoSwitch)
                 ]),
                 SettingsSection(CWL("支持"), [
                     .externalLink(CWL("关注作者"), icon: ("heart.fill", .systemRed), detail: CWL("抖音")) {
