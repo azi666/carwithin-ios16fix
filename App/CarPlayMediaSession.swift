@@ -15,7 +15,6 @@ final class CarPlayMediaSession {
     private var timing: MediaTiming?
     private var audio: [Int: CarPlayAudio] = [:]
     private let audioEnabled: Bool
-    private let bluetoothAudio: Bool
     private let hevc: Bool
     private var eventCipher: ControlCipher?
     private var eventParser = RTSPParser(allowResponses: true)
@@ -29,9 +28,9 @@ final class CarPlayMediaSession {
     var onLog: ((String) -> Void)?
     var onBrowserAudio: ((Int, AVAudioPCMBuffer, UInt64) -> Void)?
     var onVideo: ((Data, VideoCodec) -> Void)?
-    init(queue: DispatchQueue, secret: SymmetricKey, peerAddress: String, audioEnabled: Bool, hevc: Bool, bluetoothAudio: Bool = false) {
+    init(queue: DispatchQueue, secret: SymmetricKey, peerAddress: String, audioEnabled: Bool, hevc: Bool) {
         self.queue = queue; self.secret = secret; self.peerAddress = peerAddress
-        self.audioEnabled = audioEnabled; self.hevc = hevc; self.bluetoothAudio = bluetoothAudio
+        self.audioEnabled = audioEnabled; self.hevc = hevc
     }
     func setup(_ data: Data) throws -> Data {
         guard let values = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
@@ -57,7 +56,7 @@ final class CarPlayMediaSession {
                     if !audioEnabled {
                         audio.removeValue(forKey: type.intValue)?.stop()
                         let audible = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
-                            connectionID: connectionID.uint64Value, format: format, silent: false, preferBluetooth: bluetoothAudio)
+                            connectionID: connectionID.uint64Value, format: format, silent: false)
                         audio[type.intValue] = audible
                         replies.append(["type": type, "dataPort": audible.dataPort, "controlPort": audible.controlPort])
                         onLog?(CWL("音频流 {1} 已接收并送 iPhone 播放（端口 {2}）",
@@ -70,9 +69,7 @@ final class CarPlayMediaSession {
                     let microphonePort = requestsMicrophone ? (stream["dataPort"] as? NSNumber).flatMap { UInt16(exactly: $0.intValue) }.flatMap { $0 > 0 ? $0 : nil } : nil
                     audio.removeValue(forKey: type.intValue)?.stop()
                     let output = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
-                        connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort,
-                        preferBluetooth: bluetoothAudio)
-                    onLog?(CWL("音频流 {1} 蓝牙伴音标志={2}", [String(describing: type), bluetoothAudio ? "开" : "关"]))
+                        connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort)
                     output.onLog = { [weak self] in self?.onLog?($0) }
                     // Keep calls and Siri on the iPhone; only intended playback goes to LAN viewers.
                     if let onBrowserAudio, !requestsMicrophone, !["telephony", "speechrecognition"].contains(audioType) {
