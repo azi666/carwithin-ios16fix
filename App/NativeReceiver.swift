@@ -59,6 +59,8 @@ final class NativeReceiver {
     private var statFrames = 0
     private var statBytes = 0
     private var statWindowStart = Date()
+    private var statLastFrameAt: Date?
+    private var statMaxGap: TimeInterval = 0
     private var airPlayIdentity: AirPlayCredentials?
     private let videoOutput = VideoOutputServer()
     private let carLife = CarLifeOutput()
@@ -463,15 +465,25 @@ final class NativeReceiver {
             let ms = Int(Date().timeIntervalSince(sessionStartedAt) * 1000)
             log(CWL("首帧到达：启动后 {1} ms（首帧 {2} 字节）", [String(ms), String(bytes)]))
         }
+        let now = Date()
+        if let last = statLastFrameAt {
+            let gap = now.timeIntervalSince(last)
+            if gap > statMaxGap { statMaxGap = gap }
+            if gap > 0.8 {
+                log(CWL("入帧中断 {1} ms（可能被系统挂起或仪表侧停顿）", [String(Int(gap * 1000))]))
+            }
+        }
+        statLastFrameAt = now
         statFrames += 1; statBytes += bytes
-        let elapsed = Date().timeIntervalSince(statWindowStart)
+        let elapsed = now.timeIntervalSince(statWindowStart)
         guard elapsed >= 5 else { return }
         let kbps = Int(Double(statBytes) * 8 / elapsed / 1000)
         let fps = Double(statFrames) / elapsed
-        log(CWL("视频统计 {1} 秒：{2} 帧（{3} FPS）{4} kbps 画面 {5}×{6} 关键帧请求 {7} 次",
+        log(CWL("视频统计 {1} 秒：{2} 帧（{3} FPS）{4} kbps 画面 {5}×{6} 最长间隔 {7} ms 关键帧请求 {8} 次",
             [String(Int(elapsed)), String(statFrames), String(format: "%.1f", fps), String(kbps),
-             String(displaySize?.width ?? 0), String(displaySize?.height ?? 0), String(keyframeAttempts)]))
-        statFrames = 0; statBytes = 0; statWindowStart = Date()
+             String(displaySize?.width ?? 0), String(displaySize?.height ?? 0),
+             String(Int(statMaxGap * 1000)), String(keyframeAttempts)]))
+        statFrames = 0; statBytes = 0; statWindowStart = Date(); statMaxGap = 0
     }
 
     private func keyframeArrived() {
