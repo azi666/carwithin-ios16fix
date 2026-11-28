@@ -2735,6 +2735,7 @@ extension ReceiverViewController {
                         case .carWithin: return CWL("接收设备播放")
                         case .phone: return CWL("iPhone 输出")
                         case .browser: return CWL("Wi-Fi 伴音")
+                        case .bluetooth: return CWL("蓝牙输出")
                         }
                     }) { [unowned self] in self.soundPage() },
                     .control(CWL("驾驶位"), icon: ("steeringwheel", .systemTeal), driveControl),
