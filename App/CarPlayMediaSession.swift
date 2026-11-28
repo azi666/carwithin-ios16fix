@@ -50,14 +50,17 @@ final class CarPlayMediaSession {
                     // Audio output off: still allocate ports and drain the stream silently. Replying
                     // without a dataPort makes iOS TEARDOWN and immediately re-offer the same stream,
                     // which spun in a SETUP/TEARDOWN loop every few milliseconds.
+                    // Always receive audio. CarPlay routes sound through the accessory, so a
+                    // "phone speaker" setting must still decode here and play through the iPhone;
+                    // dropping the stream (the previous behaviour) simply produced silence.
                     if !audioEnabled {
                         audio.removeValue(forKey: type.intValue)?.stop()
-                        let silent = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
-                            connectionID: connectionID.uint64Value, format: format, silent: true)
-                        audio[type.intValue] = silent
-                        replies.append(["type": type, "dataPort": silent.dataPort, "controlPort": silent.controlPort])
-                        onLog?(CWL("音频流 {1} 静默接收（输出关闭，端口 {2} 已分配）",
-                            [String(describing: type), String(describing: silent.dataPort)]))
+                        let audible = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
+                            connectionID: connectionID.uint64Value, format: format, silent: false)
+                        audio[type.intValue] = audible
+                        replies.append(["type": type, "dataPort": audible.dataPort, "controlPort": audible.controlPort])
+                        onLog?(CWL("音频流 {1} 已接收并送 iPhone 播放（端口 {2}）",
+                            [String(describing: type), String(describing: audible.dataPort)]))
                         continue
                     }
                     let audioType = (stream["audioType"] as? String ?? "").lowercased()
