@@ -140,47 +140,26 @@ final class CarPlayAudio {
                 try session.setActive(true)
                 if preferBluetooth, !bluetoothProbed {
                     bluetoothProbed = true
-                    // CarPlay owns the route while the same-device session is live, so try every
-                    // category/option combination that can legally carry A2DP and record which one,
-                    // if any, the system actually hands to Bluetooth.
-                    let bluetoothPorts: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
-                    struct Attempt { let name: String; let category: AVAudioSession.Category
-                                     let mode: AVAudioSession.Mode; let options: AVAudioSession.CategoryOptions }
-                    var mix: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
-                    if BackgroundKeepAlive.holdsAudioSession { mix.insert(.mixWithOthers) }
-                    let attempts: [Attempt] = [
-                        Attempt(name: "playAndRecord+A2DP", category: .playAndRecord, mode: .default, options: mix),
-                        Attempt(name: "playAndRecord+A2DP+speaker", category: .playAndRecord, mode: .default, options: mix.union(.defaultToSpeaker)),
-                        Attempt(name: "playAndRecord+BT", category: .playAndRecord, mode: .default, options: [.allowBluetooth]),
-                        Attempt(name: "playAndRecord+voiceChat", category: .playAndRecord, mode: .voiceChat, options: mix),
-                        Attempt(name: "playback", category: .playback, mode: .default, options: []),
-                        Attempt(name: "ambient", category: .ambient, mode: .default, options: []),
-                        Attempt(name: "multiRoute", category: .multiRoute, mode: .default, options: []),
-                        Attempt(name: "playAndRecord", category: .playAndRecord, mode: .default, options: [.defaultToSpeaker])
-                    ]
-                    var landedOnBluetooth = false
-                    for attempt in attempts {
-                        do {
-                            try session.setCategory(attempt.category, mode: attempt.mode, options: attempt.options)
-                            try session.setActive(true)
-                        } catch {
-                            onLog?(CWL("蓝牙伴音：{1} 设置失败（错误码 {2}）",
-                                [attempt.name, String((error as NSError).code)]))
-                            continue
-                        }
+                    // Tested on 16.4.1: every legal category/option combination keeps the route on
+                    // the local CarPlay endpoint while this same-device session is live. Ask once,
+                    // report the truth, and never churn categories again: repeated setCategory calls
+                    // tore down the audio channel and stalled video.
+                    var bt: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+                    if BackgroundKeepAlive.holdsAudioSession { bt.insert(.mixWithOthers) }
+                    var landed = false
+                    if (try? session.setCategory(.playAndRecord, mode: .default, options: bt)) != nil {
+                        try? session.setActive(true)
                         let route = session.currentRoute.outputs
                         let text = route.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")
-                        let onBluetooth = route.contains { bluetoothPorts.contains($0.portType) }
-                        onLog?(CWL("蓝牙伴音：{1} → {2}", [attempt.name, text]))
-                        if onBluetooth { landedOnBluetooth = true; break }
+                        let ports: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+                        landed = route.contains { ports.contains($0.portType) }
+                        onLog?(CWL("蓝牙伴音：请求 A2DP → {1}", [text]))
                     }
-                    if landedOnBluetooth {
-                        onLog?(CWL("蓝牙伴音：已切到蓝牙路由"))
-                    } else {
+                    if !landed {
                         try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
                         try? session.overrideOutputAudioPort(.speaker)
                         Self.hasSpeakerOverride = true
-                        onLog?(CWL("蓝牙伴音：所有类别都没拿到蓝牙路由，已回落到扬声器"))
+                        onLog?(CWL("蓝牙伴音：本机 CarPlay 会话期间系统独占音频路由，已改用扬声器；蓝牙要等会话结束后才能用"))
                     }
                 }
                 if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
