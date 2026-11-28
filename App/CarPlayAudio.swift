@@ -86,11 +86,11 @@ final class CarPlayAudio {
     /// playing. iOS TEARDOWNs and re-offers an audio stream forever when the SETUP reply carries
     /// no dataPort, so a muted receiver still has to answer with a real port.
     private let silent: Bool
-    /// Head units without their own amplifier need the decoded audio on Bluetooth.
+    /// Send decoded audio to the paired Bluetooth device instead of the receiver speaker.
     private let preferBluetooth: Bool
-    /// Probing runs once per stream: repeated category switches tear down the audio channel.
-    private var bluetoothProbed = false
     /// A2DP routing is probed once per stream: retrying every packet would spam the log.
+    private var bluetoothChecked = false
+    private var bluetoothProbed = false
     init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, silent: Bool = false, preferBluetooth: Bool = false) throws {
         self.silent = silent; self.preferBluetooth = preferBluetooth
         self.queue = Self.renderQueue; self.connectionID = connectionID; self.format = format
@@ -140,28 +140,35 @@ final class CarPlayAudio {
                 try session.setActive(true)
                 if preferBluetooth, !bluetoothProbed {
                     bluetoothProbed = true
-                    // Tested on 16.4.1: the local CarPlay endpoint usually keeps the route. Ask once,
-                    // report the truth, and never churn categories again.
+                    // Tested on 16.4.1: every legal category/option combination keeps the route on
+                    // the local CarPlay endpoint while this same-device session is live. Ask once,
+                    // report the truth, and never churn categories again: repeated setCategory calls
+                    // tore down the audio channel and stalled video.
                     var bt: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
                     if BackgroundKeepAlive.holdsAudioSession { bt.insert(.mixWithOthers) }
                     var landed = false
-                    // .allowBluetoothA2DP is only legal with a duplex category; .playback returns -50.
                     if (try? session.setCategory(.playAndRecord, mode: .default, options: bt)) != nil {
                         try? session.setActive(true)
                         let route = session.currentRoute.outputs
+                        let text = route.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")
                         let ports: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
                         landed = route.contains { ports.contains($0.portType) }
-                        onLog?(CWL("蓝牙伴音：请求 A2DP → {1}",
-                            [route.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")]))
+                        onLog?(CWL("蓝牙伴音：请求 A2DP → {1}", [text]))
                     }
                     if !landed {
                         try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
                         try? session.overrideOutputAudioPort(.speaker)
                         Self.hasSpeakerOverride = true
-                        onLog?(CWL("蓝牙伴音：本机 CarPlay 会话期间系统独占音频路由，已改用扬声器"))
+                        onLog?(CWL("蓝牙伴音：本机 CarPlay 会话期间系统独占音频路由，已改用扬声器；蓝牙要等会话结束后才能用"))
                     }
                 }
-                if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
+                let userChoseExternalRoute = UserDefaults.standard.string(forKey: "chosenAudioRoute") != nil
+                if userChoseExternalRoute,
+                   session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
+                    onLog?(CWL("音频：已记录外部路由选择，但系统本次仍把音频留在 CarPlay 通道"))
+                }
+                if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }),
+                   !userChoseExternalRoute {
                     // In the same-device session CarAudio is our own virtual CarPlay receiver.
                     // Feeding decoded audio back into that route leaves the physical speaker silent.
                     if session.category != .playAndRecord {
