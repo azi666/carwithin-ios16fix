@@ -1867,7 +1867,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         networkRetryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             guard let self, !Task.isCancelled, !self.running else { return }
+            // Mark as automatic, otherwise toggleReceiver resets networkRetryCount to 0 and the
+            // counter is stuck on 1/8 forever.
+            self.restartingAutomatically = true
             self.toggleReceiver()
+            self.restartingAutomatically = false
         }
     }
 
