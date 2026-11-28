@@ -105,18 +105,17 @@ final class BackgroundKeepAlive {
             if reason == nil {
                 onLog?(CWL("后台保持准备：类别 {1}，模式 {2}，选项 {3}，路由 {4}", [String(describing: session.category.rawValue), String(describing: session.mode.rawValue), String(describing: session.categoryOptions.rawValue), String(describing: session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ","))]))
             }
-            if session.category != .playback && session.category != .playAndRecord {
+            // Always use playback for the keep-alive: SoloAmbient stops the app from being kept alive
+            // in the background, which froze the dashboard for tens of seconds.
+            if session.category != .playback || !session.categoryOptions.contains(.mixWithOthers) {
                 try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            } else if session.category == .playback && !session.categoryOptions.contains(.mixWithOthers) {
-                // CarPlay playback may have selected this category without mixing. Silent
-                // keep-alive must not request exclusive audio focus from the source iPhone.
-                try session.setCategory(.playback, mode: session.mode,
-                                        options: session.categoryOptions.union(.mixWithOthers))
             }
             try session.setActive(true)
             let player = try player ?? AVAudioPlayer(data: Self.silentWAV)
             player.numberOfLoops = -1
-            player.volume = 0
+            // A tiny but non-zero level keeps the background audio pipeline alive; pure silence is
+            // far more likely to be suspended together with the app.
+            player.volume = 0.02
             self.player = player
             guard player.play() else {
                 self.player = nil
