@@ -3215,12 +3215,12 @@ extension ReceiverViewController {
                  String(config.eryaVideoPort), String(config.eryaControlPort),
                  config.motorcycleBluetoothID?.uuidString ?? CWL("无")]))
         }
-        if let profile = config.zeehoProfile {
+        if let profile = outputMode.zeehoProfile {
             log(CWL("极核：{1}｜目标 {2}｜自动查找 {3}｜帧率 {4}",
                 [String(describing: profile), config.zeehoAddress ?? CWL("自动"),
                  config.zeehoAutomaticAddress ? CWL("开") : CWL("关"), String(describing: config.zeehoFrameRate)]))
         }
-        if let mode = config.ninebotMode {
+        if let mode = outputMode.ninebotMode {
             log(CWL("九号：{1}｜仪表 {2}｜配对车辆 {3}",
                 [String(describing: mode), config.ninebotAddress ?? "-",
                  ninebotVehicle.garage.selected?.name ?? CWL("未配对")]))
