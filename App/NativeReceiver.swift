@@ -22,6 +22,12 @@ final class NativeReceiver {
         }
     }
     #if DEBUG
+    /// Session timing and throughput, so a log can explain drops and latency without guessing.
+    private var sessionStartedAt = Date()
+    private var loggedFirstFrame = false
+    private var statFrames = 0
+    private var statBytes = 0
+    private var statWindowStart = Date()
     private var diagnosticStarted = ProcessInfo.processInfo.systemUptime
     private var diagnosticCPU = TailingPerformanceDiagnostics.cpuTime()
     private var diagnosticFrames = 0, diagnosticBytes = 0
@@ -96,6 +102,9 @@ final class NativeReceiver {
 
     func start(configuration: ReceiverConfiguration, identity: AccessoryIdentity, advertise: Bool = true,
                preferredViewer: UUID? = nil) {
+        sessionStartedAt = Date(); loggedFirstFrame = false
+        statFrames = 0; statBytes = 0; statWindowStart = Date()
+
         let listening = onListening
         queue.async { [weak self] in
             guard let self else { return }
@@ -151,6 +160,11 @@ final class NativeReceiver {
                              requestKeyframe: { [weak self] in self?.requestKeyFrame(reason: "春风解码恢复") })
             }
             if let target = configuration.ninebotAddress {
+                self.ninebot.start(localAddress: configuration.address, targetAddress: target, mode: configuration.ninebotMode,
+                    onState: { [weak self] in self?.onNinebotState?($0) },
+                    onLog: { [weak self] in self?.log($0) },
+                    requestKeyframe: { [weak self] in self?.requestKeyFrame(reason: CWL("九号解码恢复")) })
+            }
             if let profile = configuration.motorcycleProfile {
                 let address = configuration.motorcycleAddress ?? ""
                 let state: (String) -> Void = { [weak self] in self?.onMotorcycleState?($0) }
@@ -170,11 +184,6 @@ final class NativeReceiver {
                         eryaVideoPort: configuration.eryaVideoPort, eryaControlPort: configuration.eryaControlPort,
                         onState: state, onLog: log, requestKeyframe: keyframe)
                 }
-            }
-                self.ninebot.start(localAddress: configuration.address, targetAddress: target, mode: configuration.ninebotMode,
-                    onState: { [weak self] in self?.onNinebotState?($0) },
-                    onLog: { [weak self] in self?.log($0) },
-                    requestKeyframe: { [weak self] in self?.requestKeyFrame(reason: CWL("九号解码恢复")) })
             }
             if let target = configuration.tailingAddress {
                 self.tailing.onLog = { [weak self] in self?.log($0) }
@@ -447,6 +456,24 @@ final class NativeReceiver {
             self.sendKeyFrameRequest()
         }
     }
+    /// Logs the first frame latency and a throughput line every five seconds.
+    private func noteVideoStats(bytes: Int) {
+        if !loggedFirstFrame {
+            loggedFirstFrame = true
+            let ms = Int(Date().timeIntervalSince(sessionStartedAt) * 1000)
+            log(CWL("首帧到达：启动后 {1} ms（首帧 {2} 字节）", [String(ms), String(bytes)]))
+        }
+        statFrames += 1; statBytes += bytes
+        let elapsed = Date().timeIntervalSince(statWindowStart)
+        guard elapsed >= 5 else { return }
+        let kbps = Int(Double(statBytes) * 8 / elapsed / 1000)
+        let fps = Double(statFrames) / elapsed
+        log(CWL("视频统计 {1} 秒：{2} 帧（{3} FPS）{4} kbps 画面 {5}×{6} 关键帧请求 {7} 次",
+            [String(Int(elapsed)), String(statFrames), String(format: "%.1f", fps), String(kbps),
+             String(displaySize?.width ?? 0), String(displaySize?.height ?? 0), String(keyframeAttempts)]))
+        statFrames = 0; statBytes = 0; statWindowStart = Date()
+    }
+
     private func keyframeArrived() {
         guard let since = keyframeWantedSince else { return }
         keyframeWantedSince = nil
@@ -584,6 +611,7 @@ final class NativeReceiver {
                     #endif
                     let keyframe = Self.containsRandomAccess(data, codec: codec)
                     if keyframe { self.keyframeArrived() }
+                    self.noteVideoStats(bytes: data.count)
                     self.videoOutput.append(data, codec: codec)
                     if configuration.zeehoAddress != nil {
                         if configuration.zeehoProfile == .zeeho62 { self.zeeho62.append(data, codec: codec, keyframe: keyframe) }
