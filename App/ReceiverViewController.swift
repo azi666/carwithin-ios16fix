@@ -39,7 +39,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             case .carWithin: return CWL("声音由当前接收设备播放，例如 iPad 的扬声器。")
             case .phone: return CWL("用 iPhone 当前的声音输出。想让车机出声，请先配对并选中车机蓝牙。")
             case .browser: return CWL("由接收画面的设备播放。画面自动播放后，若网页提示「开启声音」，点一下即可。")
-            case .bluetooth: return CWL("车机没有功放时使用：解码后的声音送到已配对的蓝牙设备。请先在系统设置里连好蓝牙；CarPlay 会话期间系统可能把音频锁在本机通道。")
+            case .bluetooth: return CWL("车机没有功放时使用：解码后的声音送到已配对的蓝牙音箱或车机蓝牙。请先在系统设置里连好蓝牙。")
             }
         }
     }
@@ -3217,10 +3217,11 @@ extension ReceiverViewController {
         log(CWL("版本 {1}（{2}）提交 {3}｜iOS {4}｜机型 {5}｜本机地址 {6}",
             [version, build, Self.buildCommit, UIDevice.current.systemVersion,
              UIDevice.current.model, config.address]))
-        log(CWL("输出模式 {1}｜画面 {2}×{3} @ {4} FPS {5}｜声音 {6}",
+        log(CWL("输出模式 {1}｜画面 {2}×{3} @ {4} FPS {5}｜声音 {6}｜蓝牙路由 {7}",
             [headUnitOutput.selectedTitle, String(config.width), String(config.height),
              String(config.maxFPS), String(describing: config.videoCodec),
-             soundOutput == .phone ? CWL("iPhone") : soundOutput.title]))
+             soundOutput == .phone ? CWL("iPhone") : soundOutput.title,
+             config.bluetoothAudio ? CWL("开") : CWL("关")]))
         log(CWL("Wi-Fi「{1}」信道 {2}｜浏览器输出 {3}｜后台保持 {4}",
             [config.ssid, String(config.wifiChannel),
              videoOutputSwitch.isOn ? CWL("开（端口 {1}）", [config.videoOutputPort.map(String.init) ?? "-"]) : CWL("关"),
@@ -3329,7 +3330,26 @@ extension ReceiverViewController {
             guard let self else { return }
             self.refreshAirPlayPlaybackStatus()
             self.log("当前声音路由：\(self.audioRouteDescription)")
+            Self.noteUserRouteChoice()
             self.reloadVisibleSettings()
+        }
+    }
+
+    /// Remembers a route the user picked in the system picker (Bluetooth, AirPlay, headphones…)
+    /// so the CarPlay loopback guard stops pulling audio back to the built-in speaker.
+    static func noteUserRouteChoice() {
+        let external: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE,
+                                               .airPlay, .headphones, .usbAudio, .HDMI]
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        let defaults = UserDefaults.standard
+        if let picked = outputs.first(where: { external.contains($0.portType) }) {
+            if defaults.string(forKey: "chosenAudioRoute") != picked.portType.rawValue {
+                defaults.set(picked.portType.rawValue, forKey: "chosenAudioRoute")
+                NSLog("[CarWithin] 记录外部音频路由：%@", picked.portName)
+            }
+        } else if outputs.contains(where: { $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }) {
+            // Back on the phone speaker: forget the choice so the loopback guard works normally.
+            defaults.removeObject(forKey: "chosenAudioRoute")
         }
     }
 
