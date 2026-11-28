@@ -30,15 +30,16 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private let openNetworkSwitch = UISwitch()
     private enum SoundOutput: Int, CaseIterable {
         // Retain the persisted values so the existing Wi-Fi preference survives this change.
-        case carWithin = 0, phone = 1, browser = 2
+        case carWithin = 0, phone = 1, browser = 2, bluetooth = 3
 
-        var title: String { [CWL("在接收设备上播放"), CWL("由 iPhone 输出"), CWL("随画面传输（Wi-Fi）")][rawValue] }
+        var title: String { [CWL("在接收设备上播放"), CWL("由 iPhone 输出"), CWL("随画面传输（Wi-Fi）"), CWL("蓝牙输出（车机无喇叭）")][rawValue] }
 
         var explanation: String {
             switch self {
             case .carWithin: return CWL("声音由当前接收设备播放，例如 iPad 的扬声器。")
             case .phone: return CWL("用 iPhone 当前的声音输出。想让车机出声，请先配对并选中车机蓝牙。")
             case .browser: return CWL("由接收画面的设备播放。画面自动播放后，若网页提示「开启声音」，点一下即可。")
+            case .bluetooth: return CWL("车机没有功放时使用：解码后的声音送到已配对的蓝牙音箱或车机蓝牙。请先在系统设置里连好蓝牙。")
             }
         }
     }
@@ -47,17 +48,16 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         let receivesOnPad = UIDevice.current.userInterfaceIdiom == .pad
         let legacy: SoundOutput = receivesOnPad && (defaults.object(forKey: "speakerAudio") as? Bool ?? true)
             ? .carWithin : .phone
-        let saved = (defaults.object(forKey: "soundOutput") as? Int).flatMap(SoundOutput.init(rawValue:)) ?? legacy
-        if saved == .carWithin && !receivesOnPad {
-            defaults.set(SoundOutput.phone.rawValue, forKey: "soundOutput")
-            return .phone
-        }
-        return saved
+        // Honour whatever was chosen last time: forcing a fallback on every launch made the user
+        // re-select their output each time the app started.
+        return (defaults.object(forKey: "soundOutput") as? Int).flatMap(SoundOutput.init(rawValue:)) ?? legacy
     }()
     private var receivesAudioFromAnotherDevice: Bool { modeControl.selectedSegmentIndex == 0 }
     private var soundOutput: SoundOutput {
-        if outputMode == .carLife || outputMode == .airPlay || outputMode.usesInstrumentWiFi { return .phone }
-        if selectedSoundOutput == .carWithin && !receivesAudioFromAnotherDevice { return .phone }
+        // Instrument outputs keep the user's choice: a head unit without an amplifier still needs
+        // Bluetooth, and forcing the phone silently discarded an explicit selection.
+        if outputMode == .carLife || outputMode == .airPlay { return .phone }
+        if selectedSoundOutput == .carWithin && !receivesAudioFromAnotherDevice && outputMode == .browser { return .phone }
         if selectedSoundOutput == .browser && !videoOutputSwitch.isOn { return .phone }
         return selectedSoundOutput
     }
@@ -1749,7 +1749,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 videoOutputPort: outputPort, secureVideoOutputPort: httpsPort,
                 deviceID: ReceiverConfiguration.persistentDeviceID())
             if !restartingAutomatically { autoRestarts = 0; lightLevel = 0; reportedScreen = nil; primaryViewer = nil }
-            configureDisplay(&config)
+            config.bluetoothAudio = soundOutput == .bluetooth
+        configureDisplay(&config)
             do { try config.validate() } catch {
                 stopVehicleProjection()
                 log(CWL("无法启动本机 CarPlay：{1}", [String(describing: error.localizedDescription)]))
@@ -1791,6 +1792,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             ssid: ssidField.text ?? "", password: password, wifiChannel: channel, audioEnabled: soundOutput != .phone,
             videoOutputPort: outputPort, secureVideoOutputPort: httpsPort,
             deviceID: ReceiverConfiguration.persistentDeviceID())
+        config.bluetoothAudio = soundOutput == .bluetooth
         configureDisplay(&config)
         do { try config.validate(requiresWiFiCredentials: needsNetworkDetails) } catch {
             statusLabel.text = error.localizedDescription
@@ -2903,10 +2905,11 @@ extension ReceiverViewController {
                 case .carWithin: return receivesAudioFromAnotherDevice
                 case .phone: return true
                 case .browser: return videoOutputSwitch.isOn
+                case .bluetooth: return true
                 }
             }
             let rows = choices.map { output in
-                let icons = ["speaker.wave.2.fill", "iphone", "wifi"]
+                let icons = ["speaker.wave.2.fill", "iphone", "wifi", "dot.radiowaves.left.and.right"]
                 var row = SettingsRow.action(output.title, icon: (icons[output.rawValue], .systemOrange)) { [unowned self] in
                     guard !self.running else {
                         self.alert(CWL("请先停止 CarPlay"), CWL("停止后即可修改声音输出。"))
