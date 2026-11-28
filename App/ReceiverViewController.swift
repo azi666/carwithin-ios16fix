@@ -65,6 +65,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var wifiAutoTask: Task<Void, Never>?
     private var wifiAutoSuppressedSSID: String?
     private var wifiAutoLastAction = Date.distantPast
+    private var wifiAutoMismatchSSID: String?
+    private var wifiAutoMismatchCount = 0
     private let videoOutputSwitch = UISwitch()
     private let videoOutputPortField = UITextField()
     private let secureVideoOutputPortField = UITextField()
@@ -1737,21 +1739,32 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if Date().timeIntervalSince(wifiAutoLastHeartbeat) > 60 {
             wifiAutoLastHeartbeat = Date()
             log(CWL("Wi-Fi 监测：当前「{1}」目标「{2}」运行={3} 保活={4}",
-                [ssid ?? CWL("无"), target, running ? CWL("是") : CWL("否"),
+                [ssid ?? CWL("读取失败"), target, running ? CWL("是") : CWL("否"),
                  keepAlive.isRunning ? CWL("开") : CWL("关")]))
         }
         guard Date().timeIntervalSince(wifiAutoLastAction) > 20 else { return }
+        guard let ssid else {
+            // A failed SSID lookup (common in the background, and on newer iOS) must never be
+            // treated as "left the network": that stopped CarPlay every 25 seconds.
+            return
+        }
         if ssid == target {
+            wifiAutoMismatchSSID = nil; wifiAutoMismatchCount = 0
             guard !running, !waitingForNetwork, presentedViewController == nil,
                   wifiAutoSuppressedSSID != target else { return }
             wifiAutoLastAction = Date()
             log(CWL("自动启动：已连上预设 Wi-Fi「{1}」", [target]))
             toggleReceiver()
         } else {
+            // Require three consecutive readings of the same other network before stopping, so a
+            // single glitchy sample cannot kill a running session.
+            if wifiAutoMismatchSSID == ssid { wifiAutoMismatchCount += 1 }
+            else { wifiAutoMismatchSSID = ssid; wifiAutoMismatchCount = 1 }
             if wifiAutoSuppressedSSID != nil { wifiAutoSuppressedSSID = nil }
-            guard running else { return }
+            guard running, wifiAutoMismatchCount >= 3 else { return }
             wifiAutoLastAction = Date()
-            log(CWL("自动停止：已离开预设 Wi-Fi「{1}」（当前「{2}」）", [target, ssid ?? CWL("无")]))
+            wifiAutoMismatchCount = 0
+            log(CWL("自动停止：已离开预设 Wi-Fi「{1}」（连续 3 次读到「{2}」）", [target, ssid]))
             stop()
         }
     }
