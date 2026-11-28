@@ -22,12 +22,6 @@ final class NativeReceiver {
         }
     }
     #if DEBUG
-    /// Session timing and throughput, so a log can explain drops and latency without guessing.
-    private var sessionStartedAt = Date()
-    private var loggedFirstFrame = false
-    private var statFrames = 0
-    private var statBytes = 0
-    private var statWindowStart = Date()
     private var diagnosticStarted = ProcessInfo.processInfo.systemUptime
     private var diagnosticCPU = TailingPerformanceDiagnostics.cpuTime()
     private var diagnosticFrames = 0, diagnosticBytes = 0
@@ -59,6 +53,12 @@ final class NativeReceiver {
     private var displaySize: (width: Int, height: Int)?
     private var nightMode: Bool?
     private var generation = UUID()
+    /// Session timing and throughput, so a log can explain drops and latency without guessing.
+    private var sessionStartedAt = Date()
+    private var loggedFirstFrame = false
+    private var statFrames = 0
+    private var statBytes = 0
+    private var statWindowStart = Date()
     private var airPlayIdentity: AirPlayCredentials?
     private let videoOutput = VideoOutputServer()
     private let carLife = CarLifeOutput()
