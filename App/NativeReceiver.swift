@@ -599,8 +599,7 @@ final class NativeReceiver {
             }
             if state.media == nil {
                 let media = CarPlayMediaSession(queue: queue, secret: secret, peerAddress: state.peerAddress,
-                                                audioEnabled: configuration.audioEnabled, hevc: configuration.videoCodec == .h265,
-                                                 bluetoothAudio: configuration.bluetoothAudio)
+                                                audioEnabled: configuration.audioEnabled, hevc: configuration.videoCodec == .h265)
                 media.onLog = { [weak self] in self?.log($0) }
                 if configuration.browserAudio {
                     media.onBrowserAudio = { [weak self] stream, buffer, stamp in
