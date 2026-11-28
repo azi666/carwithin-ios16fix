@@ -59,6 +59,9 @@ final class NativeReceiver {
     private let zeeho = ZeehoOutput()
     private let zeeho62 = Zeeho62Legacy.ZeehoOutput()
     var onZeehoState: ((String) -> Void)?
+    var onMotorcycleState: ((String) -> Void)?
+    private let motorcycle = MotorcycleOutput(name: "motorcycle")
+    private let motorcyclePXC = CfmotoOutput(name: "motorcycle-pxc")
     private let ninebot = NinebotOutput()
     var onNinebotState: ((String) -> Void)?
     private let cfmoto5 = CfmotoOutput(name: "cfmoto5")
@@ -148,6 +151,26 @@ final class NativeReceiver {
                              requestKeyframe: { [weak self] in self?.requestKeyFrame(reason: "春风解码恢复") })
             }
             if let target = configuration.ninebotAddress {
+            if let profile = configuration.motorcycleProfile {
+                let address = configuration.motorcycleAddress ?? ""
+                let state: (String) -> Void = { [weak self] in self?.onMotorcycleState?($0) }
+                let log: (String) -> Void = { [weak self] in self?.log($0) }
+                let keyframe: () -> Void = { [weak self] in self?.requestKeyFrame(reason: "摩托车仪表解码恢复") }
+                if profile.transport == .easyConn {
+                    let mphone = configuration.tailingPhoneInfo ?? TailingPhoneInfo(package: Bundle.main.bundleIdentifier ?? "CarWithin",
+                        versionCode: Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0,
+                        model: "iPhone", systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                        width: configuration.width, height: configuration.height, rotation: 1)
+                    self.motorcyclePXC.start(localAddress: configuration.address, targetAddress: address, phone: mphone,
+                        profile: profile.pxcProfile, onState: state, onLog: log, requestKeyframe: keyframe)
+                } else {
+                    let mtarget = address.isEmpty ? (PxcConnection.gateway(for: configuration.address) ?? profile.defaultAddress) : address
+                    self.motorcycle.start(localAddress: configuration.address, targetAddress: mtarget,
+                        device: configuration.motorcycleBluetoothID, profile: profile,
+                        eryaVideoPort: configuration.eryaVideoPort, eryaControlPort: configuration.eryaControlPort,
+                        onState: state, onLog: log, requestKeyframe: keyframe)
+                }
+            }
                 self.ninebot.start(localAddress: configuration.address, targetAddress: target, mode: configuration.ninebotMode,
                     onState: { [weak self] in self?.onNinebotState?($0) },
                     onLog: { [weak self] in self?.log($0) },
@@ -439,6 +462,8 @@ final class NativeReceiver {
         videoOutput.stop()
         carLife.stop()
         zeeho.stop()
+        motorcycle.stop()
+        motorcyclePXC.stop()
         zeeho62.stop()
         ninebot.stop()
         cfmoto5.stop()
@@ -563,6 +588,10 @@ final class NativeReceiver {
                     if configuration.zeehoAddress != nil {
                         if configuration.zeehoProfile == .zeeho62 { self.zeeho62.append(data, codec: codec, keyframe: keyframe) }
                         else { self.zeeho.append(data, codec: codec, keyframe: keyframe) }
+                    }
+                    if let profile = configuration.motorcycleProfile {
+                        if profile.transport == .easyConn { self.motorcyclePXC.append(data, codec: codec, keyframe: keyframe) }
+                        else { self.motorcycle.append(data, codec: codec, keyframe: keyframe) }
                     }
                     if configuration.ninebotAddress != nil { self.ninebot.append(data, codec: codec, keyframe: keyframe) }
                     if let cfmoto = configuration.cfmotoProfile {
