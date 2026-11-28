@@ -114,6 +114,12 @@ final class VideoOutputServer {
     #endif
     var onAirPlayReady: ((UUID) -> Void)?
 
+    /// Five-second send statistics: tells a network bottleneck apart from a slow viewer.
+    private var statFrames = 0
+    private var statBytes = 0
+    private var statSkips = 0
+    private var statPeakPending = 0
+    private var statWindowStart = Date()
     private var viewerCount: Int { clients.values.filter { $0.mode != .request }.count }
     private static func nowUs() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
 
@@ -528,7 +534,20 @@ final class VideoOutputServer {
         }
         let frame = Frame(annexB: annexB, sample: sample, keyframe: keyframe, arrivalUs: Self.nowUs())
         cache(frame)
-        for client in Array(clients.values) { deliver(frame, to: client) }
+        for client in Array(clients.values) {
+            if client.pendingBytes > statPeakPending { statPeakPending = client.pendingBytes }
+            deliver(frame, to: client)
+        }
+        statFrames += 1; statBytes += sample.count
+        let elapsed = Date().timeIntervalSince(statWindowStart)
+        if elapsed >= 5, viewerCount > 0 || statFrames > 0 {
+            let kbps = Int(Double(statBytes) * 8 / elapsed / 1000)
+            let fps = Double(statFrames) / elapsed
+            onLog?(CWL("发送统计 {1} 秒：{2} 帧（{3} FPS）{4} kbps 待发峰值 {5} KB 跳过 {6} 次 观看者 {7}",
+                [String(Int(elapsed)), String(statFrames), String(format: "%.1f", fps), String(kbps),
+                 String(statPeakPending / 1024), String(statSkips), String(viewerCount)]))
+            statFrames = 0; statBytes = 0; statSkips = 0; statPeakPending = 0; statWindowStart = Date()
+        }
     }
 
     private func resetStream(codec: VideoCodec, reason: String) {
@@ -585,7 +604,7 @@ final class VideoOutputServer {
                 client.skippingToIDR = false
             } else if !keyframe, client.pendingBytes > skipPendingBytes {
                 // Never drop a single dependent frame: skip the rest of this GOP and ask for an IDR.
-                client.skippingToIDR = true; client.gaps += 1
+                client.skippingToIDR = true; client.gaps += 1; statSkips += 1
                 if client.gaps == 1 || client.gaps % 10 == 0 {
                     onLog?(CWL("{1} 网络跟不上，跳到下一个关键帧（第 {2} 次）", [String(describing: client.peer), String(describing: client.gaps)]))
                 }
