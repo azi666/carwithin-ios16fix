@@ -329,7 +329,7 @@ enum Zeeho62Legacy {
         static let ios = TailingPorts(control: 10922, auxiliary: 10711, video: 10710, announcement: 10930)
     }
 
-    /// 台铃 JPEG 和极核 H.264 共用的 PXC 投屏会话。
+    /// 极核 JPEG 和极核 H.264 共用的 PXC 投屏会话。
     final class TailingConnection: @unchecked Sendable {
         private let localIP: String
         private var targetIP: String
@@ -353,7 +353,7 @@ enum Zeeho62Legacy {
         private var mediaStarted = false
         private var configured = false
         private var isZeeho: Bool { profile.isZeeho }
-        private var dashboard: String { profile.isZeeho ? "极核" : "台铃" }
+        private var dashboard: String { profile.isZeeho ? "极核" : "极核" }
 
         init(localIP: String, targetIP: String, profile: TailingDisplayProfile, phone: TailingPhoneInfo,
              ports: TailingPorts = .ios, identityProvider: @escaping () throws -> TailingIdentity = TailingIdentity.load,
@@ -566,7 +566,7 @@ enum Zeeho62Legacy {
                         throw TailingError.protocolFailure("仪表设备资料不完整")
                     }
                     if isZeeho && name == "TL-DASH-V2" {
-                        throw TailingError.protocolFailure("目标报告台铃 TL-DASH-V2，请检查仪表配置")
+                        throw TailingError.protocolFailure("目标报告极核 TL-DASH-V2，请检查仪表配置")
                     }
                     if !isZeeho && name != "TL-DASH-V2" {
                         throw TailingError.protocolFailure("目标能力不是已支持的 TL-DASH-V2")
@@ -844,11 +844,11 @@ enum Zeeho62Legacy {
 
         var errorDescription: String? {
             switch self {
-            case .protocolFailure(let text): return "台铃协议：\(text)"
-            case .timeout(let text): return "台铃等待超时：\(text)"
-            case .closed: return "台铃会话已关闭"
+            case .protocolFailure(let text): return "极核协议：\(text)"
+            case .timeout(let text): return "极核等待超时：\(text)"
+            case .closed: return "极核会话已关闭"
             case .channel(let name, let error): return "\(name)：\(error.localizedDescription)"
-            case .system(let text, let code): return "台铃\(text)失败（\(code)）"
+            case .system(let text, let code): return "极核\(text)失败（\(code)）"
             }
         }
     }
