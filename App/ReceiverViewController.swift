@@ -778,6 +778,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         receiver.onMotorcycleState = { [weak self] message in
             guard let self, self.running, self.outputMode.motorcycleProfile != nil else { return }
+            self.log(CWL("[摩托] {1}", [message]))
             self.updateMotorcycleStatus(message)
         }
         receiver.onZeehoState = { [weak self] message in
@@ -1776,7 +1777,8 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 self.controlBrowser.start()
                 self.sameDevice.start(configuration: live, identity: identity)
             }
-            prepareExternalOutput(configuration: config)
+            logSessionSnapshot(config)
+        prepareExternalOutput(configuration: config)
             receiver.start(configuration: config, identity: identity, preferredViewer: primaryViewer)
             beginVehicleProjection()
             watchStartupAddress(address)
@@ -3188,6 +3190,48 @@ extension ReceiverViewController {
                 .note(airPlayStatus)
             ])
         ]
+    }
+
+    /// Snapshot of everything that affects a session, so a log explains what was actually used
+    /// instead of requiring the tester to remember their settings.
+    private func logSessionSnapshot(_ config: ReceiverConfiguration) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+        log(CWL("==== 会话配置快照 ===="))
+        log(CWL("版本 {1}（{2}）｜iOS {3}｜机型 {4}｜本机地址 {5}",
+            [version, build, UIDevice.current.systemVersion, UIDevice.current.model, config.address]))
+        log(CWL("输出模式 {1}｜画面 {2}×{3} @ {4} FPS {5}｜声音 {6}",
+            [headUnitOutput.selectedTitle, String(config.width), String(config.height),
+             String(config.maxFPS), String(describing: config.videoCodec),
+             soundOutput == .phone ? CWL("iPhone") : soundOutput.title]))
+        log(CWL("Wi-Fi「{1}」信道 {2}｜浏览器输出 {3}｜后台保持 {4}",
+            [config.ssid, String(config.wifiChannel),
+             videoOutputSwitch.isOn ? CWL("开（端口 {1}）", [String(config.videoOutputPort ?? 0)]) : CWL("关"),
+             keepAliveSwitch.isOn ? CWL("开") : CWL("关")]))
+        if let profile = config.motorcycleProfile {
+            log(CWL("摩托车：{1}｜传输 {2}｜目标 {3}｜Erya 端口 {4}/{5}｜蓝牙 {6}",
+                [profile.rawValue, String(describing: profile.transport),
+                 config.motorcycleAddress?.isEmpty == false ? config.motorcycleAddress! : CWL("自动"),
+                 String(config.eryaVideoPort), String(config.eryaControlPort),
+                 config.motorcycleBluetoothID?.uuidString ?? CWL("无")]))
+        }
+        if let profile = config.zeehoProfile {
+            log(CWL("极核：{1}｜目标 {2}｜自动查找 {3}｜帧率 {4}",
+                [String(describing: profile), config.zeehoAddress ?? CWL("自动"),
+                 config.zeehoAutomaticAddress ? CWL("开") : CWL("关"), String(describing: config.zeehoFrameRate)]))
+        }
+        if let mode = config.ninebotMode {
+            log(CWL("九号：{1}｜仪表 {2}｜配对车辆 {3}",
+                [String(describing: mode), config.ninebotAddress ?? "-",
+                 ninebotVehicle.garage.selected?.name ?? CWL("未配对")]))
+        }
+        if let profile = config.cfmotoProfile {
+            log(CWL("春风：{1}｜目标 {2}", [String(describing: profile), config.cfmotoAddress ?? CWL("自动")]))
+        }
+        if let address = config.tailingAddress {
+            log(CWL("台铃：目标 {1}", [address]))
+        }
+        if config.carLifeEnabled { log(CWL("CarLife：开｜目标 {1}", [config.carLifeAddress ?? "-"])) }
     }
 
     private func prepareExternalOutput(configuration: ReceiverConfiguration) {
