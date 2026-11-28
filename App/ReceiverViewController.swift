@@ -1689,7 +1689,15 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     }
     @objc private func wifiAutoChanged() {
         UserDefaults.standard.set(wifiAutoSwitch.isOn, forKey: "wifiAutoStart")
-        if wifiAutoSwitch.isOn { startWiFiAutoMonitoring() } else { stopWiFiAutoMonitoring() }
+        if wifiAutoSwitch.isOn {
+            // The watcher only runs while the app is alive; hold the audio session so iOS keeps us.
+            _ = keepAlive.start()
+            log(CWL("为保证后台监测生效，已开启后台保持"))
+            startWiFiAutoMonitoring()
+        } else {
+            stopWiFiAutoMonitoring()
+            if !running { keepAlive.stop() }
+        }
         log(wifiAutoSwitch.isOn ? CWL("自动启动已开启：连上预设 Wi-Fi 时自动启动 CarPlay")
                                 : CWL("自动启动已关闭"))
     }
@@ -1716,8 +1724,16 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
     }
 
+    private var wifiAutoLastHeartbeat = Date.distantPast
+
     private func applyWiFiAuto(ssid: String?, target: String) {
         guard wifiAutoSwitch.isOn else { return }
+        if Date().timeIntervalSince(wifiAutoLastHeartbeat) > 60 {
+            wifiAutoLastHeartbeat = Date()
+            log(CWL("Wi-Fi 监测：当前「{1}」目标「{2}」运行={3} 保活={4}",
+                [ssid ?? CWL("无"), target, running ? CWL("是") : CWL("否"),
+                 keepAlive.isRunning ? CWL("开") : CWL("关")]))
+        }
         guard Date().timeIntervalSince(wifiAutoLastAction) > 20 else { return }
         if ssid == target {
             guard !running, !waitingForNetwork, presentedViewController == nil,
@@ -1789,7 +1805,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
                 revealSettings(); statusLabel.text = error.localizedDescription; return
             }
             guard saveSettings(config) else { return }
-            if keepAliveSwitch.isOn { keepAlive.start() }
+            if keepAliveSwitch.isOn || wifiAutoSwitch.isOn { keepAlive.start() }
             view.endEditing(true); running = true; modeControl.isEnabled = false; setEditing(false)
             receiverPicker.isEnabled = false; receiverBrowser.stop()
             UIApplication.shared.isIdleTimerDisabled = true
@@ -1823,7 +1839,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             sessionHasVehicleButton = CarPlayInfo.vehicleButtonSize(in: config) != nil
             // Activate while foregrounded, before the virtual CarPlay route is selected.
             // Waiting until willResignActive can fail to acquire an audio session on CarAudio.
-            if keepAliveSwitch.isOn { keepAlive.start() }
+            if keepAliveSwitch.isOn || wifiAutoSwitch.isOn { keepAlive.start() }
             view.endEditing(true)
             running = true; modeControl.isEnabled = false; setEditing(false)
             startButton.setTitle(CWL("停止 CarPlay"), for: .normal)
@@ -1861,7 +1877,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         }
         guard saveSettings(config) else { return }
         sessionHasVehicleButton = CarPlayInfo.vehicleButtonSize(in: config) != nil
-        if keepAliveSwitch.isOn { keepAlive.start() }
+        if keepAliveSwitch.isOn || wifiAutoSwitch.isOn { keepAlive.start() }
         view.endEditing(true)
         running = true; modeControl.isEnabled = false; setEditing(false); startButton.setTitle(CWL("停止接收"), for: .normal)
         startButton.configuration?.image = UIImage(systemName: "stop.fill")
@@ -2075,7 +2091,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         sessionHasVehicleButton = false
         screenAdaptation?.cancel(); screenAdaptation = nil
         reportedScreen = nil; primaryViewer = nil; pendingRestartReason = nil
-        pictureInPicture.stop(); keepAlive.stop(); skippedLocalVideo = false
+        pictureInPicture.stop()
+        // Keep the audio session alive when Wi-Fi auto-start is armed, otherwise iOS suspends the
+        // app and the watcher can never see the network come back.
+        if !wifiAutoSwitch.isOn { keepAlive.stop() }
+        skippedLocalVideo = false
         hideFullscreen(); videoActions.isHidden = true; controlBar.isHidden = true
         displayedVideo = false; didRequestImmediatePiP = false
         videoSurface.reset(); inlineVideoContainer.isHidden = true
@@ -2174,7 +2194,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     @objc private func willResignActive() {
         guard running else { return }
         // Normally already running; retry if foreground activation failed.
-        if keepAliveSwitch.isOn { keepAlive.start() }
+        if keepAliveSwitch.isOn || wifiAutoSwitch.isOn { keepAlive.start() }
         if outputMode == .zeehoSEPlus {
             receiver.setLocalVideoEnabled(false)
             skippedLocalVideo = true
@@ -2195,7 +2215,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if running { UIApplication.shared.isIdleTimerDisabled = true }
         resumeLocalVideo()
         pictureInPicture.sourceMayBeReady()
-        if running, keepAliveSwitch.isOn { keepAlive.start() }
+        if running || wifiAutoSwitch.isOn { if keepAliveSwitch.isOn || wifiAutoSwitch.isOn { keepAlive.start() } }
         if let reason = pendingRestartReason {
             pendingRestartReason = nil
             restartCarPlay(reason: reason, forPerformance: true)
@@ -2330,7 +2350,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         guard running else { return }
         // willResignActive may have failed to start it (e.g. the session was busy); try once more
         // before deciding the session cannot survive in the background.
-        if keepAliveSwitch.isOn, !keepAlive.isRunning, keepAlive.start() { log(CWL("后台保持在进入后台时重试成功")) }
+        if keepAliveSwitch.isOn || wifiAutoSwitch.isOn, !keepAlive.isRunning, keepAlive.start() { log(CWL("后台保持在进入后台时重试成功")) }
         if canRunInBackground {
             log(keepAlive.isRunning ? CWL("App 已进入后台，CarPlay 继续运行") : CWL("App 已进入后台，由画中画保持运行"))
         } else {
@@ -2452,7 +2472,10 @@ extension ReceiverViewController {
         keepAliveSwitch.addTarget(self, action: #selector(keepAliveChanged), for: .valueChanged)
         wifiAutoSwitch.isOn = UserDefaults.standard.bool(forKey: "wifiAutoStart")
         wifiAutoSwitch.addTarget(self, action: #selector(wifiAutoChanged), for: .valueChanged)
-        if wifiAutoSwitch.isOn { startWiFiAutoMonitoring() }
+        if wifiAutoSwitch.isOn {
+            _ = keepAlive.start()
+            startWiFiAutoMonitoring()
+        }
         let savedOutput = defaults.object(forKey: "headUnitOutputV2") as? Int
         let previousOutput = defaults.object(forKey: "headUnitOutput") as? Int
         let legacyOutput: HeadUnitOutput = defaults.bool(forKey: "carLifeEnabled") ? .carLife : .browser
