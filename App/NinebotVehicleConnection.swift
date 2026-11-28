@@ -637,7 +637,7 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
             }
             let suffix = cleared
                 ? CWL("已清除该车的旧密钥记录，请在「车辆配对」重新扫描并按 P 键完成配对。")
-                : CWL("可在「车辆配对」重新扫描，或删除旧记录后重新配对。")
+                : CWL("稍后会自动重试；连续失败时可在「车辆配对」重新扫描并按 P 键配对。")
             fail(CWL("{1} 已停止自动重试。{2}仪表迟迟不进投屏时，也可以临时打开九号出行的投屏导航顶上。",
                 [reason, suffix]), retryable: false)
         }
@@ -813,7 +813,7 @@ extension NinebotVehicleConnection: @preconcurrency CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral item: CBPeripheral, error: Error?) {
         guard isCurrent(item) else { return }
         if !disconnecting && phase == .authenticating {
-            authenticationFailed(CWL("认证期间连接中断。"))
+            authenticationFailed(CWL("认证期间连接中断，稍后自动重试。"), rejectKey: false)
             return
         }
         if !disconnecting && phase == .pairing {
@@ -883,7 +883,7 @@ extension NinebotVehicleConnection: @preconcurrency CBPeripheralDelegate {
             } catch {
                 invalidPacketCount += 1
                 if invalidPacketCount >= 8 {
-                    if phase == .authenticating { authenticationFailed(CWL("保存的密钥无法验证车辆回复。")) }
+                    if phase == .authenticating { authenticationFailed(CWL("本次蓝牙数据未能验证，稍后自动重试。"), rejectKey: false) }
                     else { fail(CWL("连续收到无法验证的蓝牙数据，将重新认证。"), retryable: wantsSession) }
                     return
                 }
