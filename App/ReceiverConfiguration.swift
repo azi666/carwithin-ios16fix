@@ -36,6 +36,12 @@ struct ReceiverConfiguration {
     var cfmotoAddress: String?
     var cfmotoProfile: CfmotoProfile?
     var ninebotAddress: String?
+    /// Motorcycle instrument output (v1.0.6 multi-brand support).
+    var motorcycleProfile: MotorcycleProfile?
+    var motorcycleAddress: String?
+    var eryaVideoPort: UInt16 = 11111
+    var eryaControlPort: UInt16 = 11113
+    var motorcycleBluetoothID: UUID?
     var ninebotMode: NinebotOutput.Mode = .fiveInch
     var tailingAddress: String?
     var tailingPhoneInfo: TailingPhoneInfo?
