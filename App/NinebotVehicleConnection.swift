@@ -627,7 +627,19 @@ final class NinebotVehicleConnection: NSObject, ObservableObject {
         if !authenticationAttempts.remaining(from: candidateKeys).isEmpty {
             fail(CWL("{1} 将重新握手尝试另一份已保存密钥。", [reason]), retryable: true)
         } else {
-            fail(CWL("{1} 已停止自动重试。可在「车辆配对」重新扫描，或删除旧记录后重新配对；仪表迟迟不进投屏时，也可以临时打开九号出行的投屏导航顶上。", [reason]), retryable: false)
+            // Every saved key was rejected: the vehicle no longer accepts them (firmware update,
+            // vehicle reset, or a re-pair done from the official app). Drop the stale record so the
+            // next pairing starts from a clean state instead of failing identically again.
+            var cleared = false
+            if rejectKey, let selection = attemptVehicle {
+                do { try keyStore.remove(for: selection.id); cleared = true }
+                catch { onLog?(CWL("[车辆] 清除旧密钥失败：{1}", [String(describing: error)])) }
+            }
+            let suffix = cleared
+                ? CWL("已清除该车的旧密钥记录，请在「车辆配对」重新扫描并按 P 键完成配对。")
+                : CWL("可在「车辆配对」重新扫描，或删除旧记录后重新配对。")
+            fail(CWL("{1} 已停止自动重试。{2}仪表迟迟不进投屏时，也可以临时打开九号出行的投屏导航顶上。",
+                [reason, suffix]), retryable: false)
         }
     }
 
