@@ -86,8 +86,10 @@ final class CarPlayAudio {
     /// playing. iOS TEARDOWNs and re-offers an audio stream forever when the SETUP reply carries
     /// no dataPort, so a muted receiver still has to answer with a real port.
     private let silent: Bool
-    init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, silent: Bool = false) throws {
-        self.silent = silent
+    /// Send decoded audio to the paired Bluetooth device instead of the receiver speaker.
+    private let preferBluetooth: Bool
+    init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, silent: Bool = false, preferBluetooth: Bool = false) throws {
+        self.silent = silent; self.preferBluetooth = preferBluetooth
         self.queue = Self.renderQueue; self.connectionID = connectionID; self.format = format
         decoder = try NativeAudioDecoder(format: format)
         output = decoder.output
@@ -128,11 +130,18 @@ final class CarPlayAudio {
                 let needsDuplexCategory = microphone != nil || Self.hasSpeakerOverride
                 var options: AVAudioSession.CategoryOptions = needsDuplexCategory ? [.defaultToSpeaker] : []
                 if BackgroundKeepAlive.holdsAudioSession { options.insert(.mixWithOthers) }
+                // A head unit without its own amplifier still needs sound, so allow A2DP and let the
+                // system route decoded audio to the paired Bluetooth speaker.
+                if preferBluetooth { options.insert(.allowBluetoothA2DP) }
                 let category: AVAudioSession.Category = needsDuplexCategory ? .playAndRecord : .playback
                 if session.category != category || session.mode != .default || session.categoryOptions != options {
                     try session.setCategory(category, mode: .default, options: options)
                 }
                 try session.setActive(true)
+                if preferBluetooth {
+                    let route = session.currentRoute.outputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")
+                    onLog?(CWL("蓝牙伴音：当前路由 {1}", [route]))
+                }
                 if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
                     // In the same-device session CarAudio is our own virtual CarPlay receiver.
                     // Feeding decoded audio back into that route leaves the physical speaker silent.
