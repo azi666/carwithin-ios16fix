@@ -3206,7 +3206,7 @@ extension ReceiverViewController {
              soundOutput == .phone ? CWL("iPhone") : soundOutput.title]))
         log(CWL("Wi-Fi「{1}」信道 {2}｜浏览器输出 {3}｜后台保持 {4}",
             [config.ssid, String(config.wifiChannel),
-             videoOutputSwitch.isOn ? CWL("开（端口 {1}）", [String(config.videoOutputPort ?? 0)]) : CWL("关"),
+             videoOutputSwitch.isOn ? CWL("开（端口 {1}）", [config.videoOutputPort.map(String.init) ?? "-"]) : CWL("关"),
              keepAliveSwitch.isOn ? CWL("开") : CWL("关")]))
         if let profile = config.motorcycleProfile {
             log(CWL("摩托车：{1}｜传输 {2}｜目标 {3}｜Erya 端口 {4}/{5}｜蓝牙 {6}",
