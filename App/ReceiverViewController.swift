@@ -909,8 +909,22 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             refreshScreenMenu()
         }
         #endif
-        wifiPathMonitor.pathUpdateHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.refreshNetworkAddresses() }
+        wifiPathMonitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.refreshNetworkAddresses()
+                guard self.wifiAutoSwitch.isOn else { return }
+                // Joining a Wi-Fi network does not wake a backgrounded app by itself; this path
+                // event is what we get, so read the SSID right away and again a few times while
+                // the association settles.
+                self.log(CWL("Wi-Fi 路径变化（可用={1}），检查是否已连上预设网络", [path.status == .satisfied ? CWL("是") : CWL("否")]))
+                if path.status != .satisfied { self.wifiAutoSuppressedSSID = nil }
+                for delay in [0.0, 1.5, 4.0, 8.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                        self?.checkWiFiAutoTrigger()
+                    }
+                }
+            }
         }
         wifiPathMonitor.start(queue: DispatchQueue(label: "CarWithin.wifiPath"))
         loadIdentity()
@@ -2258,6 +2272,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             self?.checkForUpdates(manual: false)
         }
         pictureInPicture.returnedToForeground()
+        if wifiAutoSwitch.isOn { checkWiFiAutoTrigger() }
         receiver.setLocalVideoEnabled(true)
         if running { UIApplication.shared.isIdleTimerDisabled = true }
         resumeLocalVideo()
