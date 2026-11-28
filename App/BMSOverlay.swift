@@ -2,7 +2,7 @@ import CoreImage
 import UIKit
 
 /// Renders a small, noninteractive telemetry panel once per changed text. The
-/// same bitmap is shown locally and composited into Ninebot's encoded video.
+/// same bitmap is shown locally and composited into supported instrument video.
 final class BMSOverlayPresenter {
     private let imageView = UIImageView()
     private var cachedText: String?
@@ -19,7 +19,7 @@ final class BMSOverlayPresenter {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
         surface.addSubview(imageView)
-        cachedConfiguration = nil // Layout must be rebuilt even if telemetry arrived before attachment.
+        cachedConfiguration = nil
     }
 
     func update(enabled: Bool, reading: ANTBMSReading?, status: String,
@@ -35,7 +35,7 @@ final class BMSOverlayPresenter {
         if let reading {
             text = configuration.lines(for: reading).joined(separator: "\n")
         } else {
-            text = "ANT BMS · 无实时数据\n" + (status.contains("过期") || status.contains("断开") || status.contains("重连")
+            text = "BMS · 无实时数据\n" + (status.contains("过期") || status.contains("断开") || status.contains("重连")
                 ? "连接失联，等待恢复" : "等待电池数据")
         }
         let previousLineCount = cachedText?.components(separatedBy: "\n").count
@@ -97,5 +97,21 @@ final class BMSOverlayPresenter {
                 ])
             }
         }.cgImage
+    }
+}
+
+/// Uses the negotiated output bounds for every supported instrument size.
+enum BMSVideoCompositor {
+    static func composite(_ overlay: CIImage?, configuration: ANTBMSCardConfiguration,
+                          over canvas: CIImage, in bounds: CGRect) -> CIImage {
+        guard let overlay else { return canvas }
+        let margin = max(6, bounds.width * 0.007)
+        let scale = min(bounds.width * CGFloat(configuration.size.widthFraction) / overlay.extent.width,
+                        max(1, bounds.height - margin * 2) / overlay.extent.height)
+        let scaled = overlay.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let positioned = scaled.transformed(by: CGAffineTransform(
+            translationX: (configuration.position.isAtRight ? bounds.maxX - margin - scaled.extent.width : bounds.minX + margin) - scaled.extent.minX,
+            y: (configuration.position.isAtTop ? bounds.maxY - margin - scaled.extent.height : bounds.minY + margin) - scaled.extent.minY))
+        return positioned.composited(over: canvas).cropped(to: bounds)
     }
 }
