@@ -34,6 +34,10 @@ final class BackgroundKeepAlive {
         lock.lock(); defer { lock.unlock() }
         return holding
     }
+    /// Activation regularly fails with -50 while another session is still tearing down; retry a few
+    /// times instead of leaving the app without a background audio session.
+    private var activationGeneration = UUID()
+    private var activationAttempt = 0
     private static func setHolding(_ value: Bool) { lock.lock(); holding = value; lock.unlock() }
 
     @discardableResult
@@ -72,6 +76,7 @@ final class BackgroundKeepAlive {
     }
 
     func stop() {
+        activationGeneration = UUID(); activationAttempt = 0
         guard isRunning else { return }
         isRunning = false
         Self.setHolding(false)
@@ -118,12 +123,32 @@ final class BackgroundKeepAlive {
                 if reason == nil {
                     onLog?(CWL("后台保持开启失败：系统拒绝播放（类别 {1}，模式 {2}，选项 {3}，路由 {4}）", [String(describing: session.category.rawValue), String(describing: session.mode.rawValue), String(describing: session.categoryOptions.rawValue), String(describing: session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ","))]))
                 }
+                scheduleActivationRetry()
                 return false
             }
+            activationAttempt = 0
             return true
         } catch {
-            if reason == nil { onLog?(CWL("后台保持开启失败：{1}", [String(describing: error.localizedDescription)])) }
+            let code = (error as NSError).code
+            if reason == nil {
+                onLog?(CWL("后台保持开启失败：{1}（错误码 {2}）",
+                    [String(describing: error.localizedDescription), String(code)]))
+                scheduleActivationRetry()
+            }
             return false
+        }
+    }
+
+    private func scheduleActivationRetry() {
+        guard activationAttempt < 3 else { return }
+        activationAttempt += 1
+        let generation = activationGeneration
+        let delay = 0.8 * Double(activationAttempt)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.activationGeneration == generation else { return }
+            if self.play(reason: CWL("后台保持重试 {1}", [String(self.activationAttempt)])) {
+                self.activationAttempt = 0
+            }
         }
     }
 
