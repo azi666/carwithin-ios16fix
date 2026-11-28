@@ -60,6 +60,11 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         if selectedSoundOutput == .browser && !videoOutputSwitch.isOn { return .phone }
         return selectedSoundOutput
     }
+    /// Auto start/stop CarPlay when the phone joins or leaves the selected Wi-Fi preset.
+    private let wifiAutoSwitch = UISwitch()
+    private var wifiAutoTask: Task<Void, Never>?
+    private var wifiAutoSuppressedSSID: String?
+    private var wifiAutoLastAction = Date.distantPast
     private let videoOutputSwitch = UISwitch()
     private let videoOutputPortField = UITextField()
     private let secureVideoOutputPortField = UITextField()
@@ -1682,8 +1687,60 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             log(CWL("无法保存身份导入结果：{1}", [String(describing: error.localizedDescription)]))
         }
     }
+    @objc private func wifiAutoChanged() {
+        UserDefaults.standard.set(wifiAutoSwitch.isOn, forKey: "wifiAutoStart")
+        if wifiAutoSwitch.isOn { startWiFiAutoMonitoring() } else { stopWiFiAutoMonitoring() }
+        log(wifiAutoSwitch.isOn ? CWL("自动启动已开启：连上预设 Wi-Fi 时自动启动 CarPlay")
+                                : CWL("自动启动已关闭"))
+    }
+
+    private func startWiFiAutoMonitoring() {
+        wifiAutoTask?.cancel()
+        wifiAutoTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                guard let self, !Task.isCancelled, self.wifiAutoSwitch.isOn else { return }
+                self.checkWiFiAutoTrigger()
+            }
+        }
+    }
+
+    private func stopWiFiAutoMonitoring() {
+        wifiAutoTask?.cancel(); wifiAutoTask = nil
+    }
+
+    private func checkWiFiAutoTrigger() {
+        guard let target = WiFiPresetStore.selected()?.ssid, !target.isEmpty else { return }
+        NEHotspotNetwork.fetchCurrent { [weak self] network in
+            DispatchQueue.main.async { self?.applyWiFiAuto(ssid: network?.ssid, target: target) }
+        }
+    }
+
+    private func applyWiFiAuto(ssid: String?, target: String) {
+        guard wifiAutoSwitch.isOn else { return }
+        guard Date().timeIntervalSince(wifiAutoLastAction) > 20 else { return }
+        if ssid == target {
+            guard !running, !waitingForNetwork, presentedViewController == nil,
+                  wifiAutoSuppressedSSID != target else { return }
+            wifiAutoLastAction = Date()
+            log(CWL("自动启动：已连上预设 Wi-Fi「{1}」", [target]))
+            toggleReceiver()
+        } else {
+            if wifiAutoSuppressedSSID != nil { wifiAutoSuppressedSSID = nil }
+            guard running else { return }
+            wifiAutoLastAction = Date()
+            log(CWL("自动停止：已离开预设 Wi-Fi「{1}」（当前「{2}」）", [target, ssid ?? CWL("无")]))
+            stop()
+        }
+    }
+
     @objc private func toggleReceiver() {
-        if running || waitingForNetwork { stop(); return }
+        if running || waitingForNetwork {
+            // Remember that the user stopped it on purpose while still on the preset network,
+            // otherwise the watcher would start it again six seconds later.
+            if !restartingAutomatically { wifiAutoSuppressedSSID = WiFiPresetStore.selected()?.ssid }
+            stop(); return
+        }
         if !restartingAutomatically { networkRetryCount = 0; networkRetryTask?.cancel() }
         if !restartingAutomatically { networkRestartCount = 0 }
         clearStartupHint()
@@ -2393,6 +2450,9 @@ extension ReceiverViewController {
         pictureInPictureTiming.addTarget(self, action: #selector(pictureInPictureTimingChanged), for: .valueChanged)
         keepAliveSwitch.isOn = defaults.object(forKey: "backgroundKeepAlive") as? Bool ?? true
         keepAliveSwitch.addTarget(self, action: #selector(keepAliveChanged), for: .valueChanged)
+        wifiAutoSwitch.isOn = UserDefaults.standard.bool(forKey: "wifiAutoStart")
+        wifiAutoSwitch.addTarget(self, action: #selector(wifiAutoChanged), for: .valueChanged)
+        if wifiAutoSwitch.isOn { startWiFiAutoMonitoring() }
         let savedOutput = defaults.object(forKey: "headUnitOutputV2") as? Int
         let previousOutput = defaults.object(forKey: "headUnitOutput") as? Int
         let legacyOutput: HeadUnitOutput = defaults.bool(forKey: "carLifeEnabled") ? .carLife : .browser
@@ -2748,6 +2808,7 @@ extension ReceiverViewController {
                 SettingsSection(CWL("后台与画中画"), footer: CWL("锁屏前，请在 iPhone「设置 › 通用 › CarPlay › CarWithin」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。"), [
                     .control(CWL("锁屏与后台继续运行"), icon: ("lock.fill", .systemPurple), keepAliveSwitch),
                     .control(CWL("画中画开启时机"), icon: ("pip.fill", .systemIndigo), pictureInPictureTiming)
+                    .control(CWL("连上预设 Wi-Fi 自动启动"), icon: ("wifi", .systemBlue), wifiAutoSwitch)
                 ]),
                 SettingsSection(CWL("支持"), [
                     .externalLink(CWL("关注作者"), icon: ("heart.fill", .systemRed), detail: CWL("抖音")) {
