@@ -12,6 +12,8 @@ final class YunmoConnection: @unchecked Sendable {
     private var sent: Int64 = -1
     private var acked: Int64 = -1
     private var lastAck = ProcessInfo.processInfo.systemUptime
+    /// Set to false once it is clear this dash never acknowledges frames.
+    private var windowingEnabled = true
     private let log: (String) -> Void
     init(log: @escaping (String) -> Void) { self.log = log }
     func start(local: String, target: String) throws -> (Int, Int) {
@@ -40,7 +42,10 @@ final class YunmoConnection: @unchecked Sendable {
             while !closed && error == nil && size == nil { if !condition.wait(until: deadline) { break } }
             try checkLocked()
             log("Yunmo handshake state modeConfirmed=\(confirmed) dimensions=\(size.map { "\($0.0)×\($0.1)" } ?? "missing")")
-            guard confirmed, let size else { throw TailingError.timeout("Yunmo 仪表未确认显示模式或尺寸，请确认仪表处于互联页面") }
+            if !confirmed, size != nil {
+                log("Yunmo 仪表未回显示模式确认，但已报告尺寸，按该尺寸继续尝试投屏")
+            }
+            guard let size else { throw TailingError.timeout("Yunmo 仪表未报告尺寸，请确认仪表处于互联页面") }
             log("Yunmo 协商 \(size.0)×\(size.1)，JPEG，发送窗口2")
             return size
         } catch { close(); throw error }
@@ -55,6 +60,11 @@ final class YunmoConnection: @unchecked Sendable {
                 condition.lock()
                 switch f.command {
                 case 0x32, 0x33:
+                    if f.command == 0x32 {
+                        let hex = f.payload.prefix(16).map { String(format: "%02x", $0) }.joined(separator: " ")
+                        let dims = YunmoProtocol.dimensions(f.payload).map { "\($0.0)×\($0.1)" } ?? "未识别"
+                        log("Yunmo 尺寸帧 0x32：\(hex) → \(dims)")
+                    }
                     if let next = YunmoProtocol.dimensions(f.payload) {
                         if let old = size, old != next { error = TailingError.protocolFailure("Yunmo 会话内尺寸改变，请重新启动") }
                         else { size = next }
@@ -83,8 +93,14 @@ final class YunmoConnection: @unchecked Sendable {
     func waitWritable() throws {
         condition.lock(); defer { condition.unlock() }
         let deadline = Date().addingTimeInterval(6)
-        while !closed && error == nil && sent - acked >= 2 {
-            if !condition.wait(until: deadline) { throw TailingError.timeout("Yunmo 等待图片确认") }
+        while !closed && error == nil && windowingEnabled && sent - acked >= 2 {
+            if !condition.wait(until: deadline) {
+                // This dash sends 0x33 request frames but never acknowledges images; stalling here
+                // would end the session, so keep streaming at the profile frame rate instead.
+                windowingEnabled = false
+                log("Yunmo 未收到图片确认，改为不限窗口持续发送")
+                break
+            }
         }
         try checkLocked()
     }
