@@ -67,6 +67,8 @@ final class NativeReceiver {
     private let zeeho = ZeehoOutput()
     private let zeeho62 = Zeeho62Legacy.ZeehoOutput()
     var onZeehoState: ((String) -> Void)?
+    /// Called when iOS accepted the control channel but never negotiated media.
+    var onNegotiationStall: ((Bool) -> Void)?
     var onMotorcycleState: ((String) -> Void)?
     private let motorcycle = MotorcycleOutput(name: "motorcycle")
     private let motorcyclePXC = CfmotoOutput(name: "motorcycle-pxc")
@@ -361,6 +363,8 @@ final class NativeReceiver {
                             } else {
                                 self.log(CWL("控制连接已建立 10 秒，仍未收到任何媒体 SETUP —— iPhone 停在媒体协商之前"))
                             }
+                            // Report it: left alone this state hangs forever and the screen stays black.
+                            DispatchQueue.main.async { [weak self] in self?.onNegotiationStall?(anyMedia) }
                         }
                     case .failed, .cancelled:
                         state.media?.stop(); self.sessions.removeValue(forKey: id); self.connections.removeValue(forKey: id)
