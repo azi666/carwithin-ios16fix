@@ -88,6 +88,8 @@ final class CarPlayAudio {
     private let silent: Bool
     /// Send decoded audio to the paired Bluetooth device instead of the receiver speaker.
     private let preferBluetooth: Bool
+    /// A2DP routing is probed once per stream: retrying every packet would spam the log.
+    private var bluetoothChecked = false
     init(secret: SymmetricKey, peerAddress: String, connectionID: UInt64, format: ReceiverAudioFormat, microphonePort: UInt16? = nil, silent: Bool = false, preferBluetooth: Bool = false) throws {
         self.silent = silent; self.preferBluetooth = preferBluetooth
         self.queue = Self.renderQueue; self.connectionID = connectionID; self.format = format
@@ -130,17 +132,30 @@ final class CarPlayAudio {
                 let needsDuplexCategory = microphone != nil || Self.hasSpeakerOverride
                 var options: AVAudioSession.CategoryOptions = needsDuplexCategory ? [.defaultToSpeaker] : []
                 if BackgroundKeepAlive.holdsAudioSession { options.insert(.mixWithOthers) }
-                // A head unit without its own amplifier still needs sound, so allow A2DP and let the
-                // system route decoded audio to the paired Bluetooth speaker.
-                if preferBluetooth { options.insert(.allowBluetoothA2DP) }
                 let category: AVAudioSession.Category = needsDuplexCategory ? .playAndRecord : .playback
                 if session.category != category || session.mode != .default || session.categoryOptions != options {
                     try session.setCategory(category, mode: .default, options: options)
                 }
                 try session.setActive(true)
-                if preferBluetooth {
-                    let route = session.currentRoute.outputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")
-                    onLog?(CWL("蓝牙伴音：当前路由 {1}", [route]))
+                if preferBluetooth && !bluetoothChecked {
+                    bluetoothChecked = true
+                    // A head unit without its own amplifier needs the sound on Bluetooth. Ask for
+                    // A2DP and check where the system actually routed it before falling back.
+                    var bt = AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+                    if BackgroundKeepAlive.holdsAudioSession { bt.insert(.mixWithOthers) }
+                    try session.setCategory(.playback, mode: .default, options: bt)
+                    try session.setActive(true)
+                    let outs = session.currentRoute.outputs
+                    let bluetoothPorts: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+                    let onBluetooth = outs.contains { bluetoothPorts.contains($0.portType) }
+                    onLog?(CWL("蓝牙伴音：请求 A2DP，当前路由 {1}",
+                        [outs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ",")]))
+                    if !onBluetooth {
+                        // The same-device CarPlay session owns the route; speaker keeps audio audible.
+                        try session.overrideOutputAudioPort(.speaker)
+                        Self.hasSpeakerOverride = true
+                        onLog?(CWL("蓝牙伴音：系统未把路由交给蓝牙，已回落到扬声器；可在控制中心切换音频输出"))
+                    }
                 }
                 if session.currentRoute.outputs.contains(where: { $0.portType == .carAudio }) {
                     // In the same-device session CarAudio is our own virtual CarPlay receiver.
