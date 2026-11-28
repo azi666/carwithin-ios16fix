@@ -89,6 +89,12 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
     private var networkStartupTask: Task<Void, Never>?
     private var waitingForNetwork = false
     private var networkRestartCount = 0
+    /// Watches the local address for the whole session: a Wi-Fi drop mid-drive used to leave the
+    /// dashboard frozen with nothing to recover it.
+    private var sessionWatchdog: Task<Void, Never>?
+    private var lastRecoveryAt = Date.distantPast
+    private var recoveryAttempts = 0
+
     private var localStartupID: UUID?
     private let aspectRatioControl = ChoiceMenu(items: [CWL("预设比例")] + ReceiverConfiguration.aspectRatios.map(\.title))
     private let resolutionControl = ChoiceMenu(items: ReceiverConfiguration.resolutions.map { "\($0.label)（\($0.width)×\($0.height)）" })
@@ -1859,6 +1865,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             receiver.start(configuration: config, identity: identity, preferredViewer: primaryViewer)
             beginVehicleProjection()
             watchStartupAddress(address)
+            startSessionWatchdog()
             return
         }
         guard let identity else { return }
@@ -1946,6 +1953,43 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             self.stop()
             self.statusLabel.text = CWL("未获得 Wi-Fi 地址。请连接正确的 Wi-Fi 后重试。")
         }
+    }
+
+    private func startSessionWatchdog() {
+        sessionWatchdog?.cancel()
+        sessionWatchdog = Task { [weak self] in
+            var lostSince: Date?
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard let self, !Task.isCancelled, self.running else { return }
+                self.refreshNetworkAddresses()
+                if self.localCarPlayAddress != nil {
+                    guard let lost = lostSince else { continue }
+                    let gap = Int(Date().timeIntervalSince(lost))
+                    lostSince = nil
+                    self.log(CWL("网络已恢复（断开 {1} 秒），准备自动重连投屏", [String(gap)]))
+                    self.recoverAfterNetworkGap()
+                } else if lostSince == nil {
+                    lostSince = Date()
+                    self.log(CWL("网络已断开，投屏暂停；等待 Wi-Fi 恢复后自动重连"))
+                    self.statusLabel.text = CWL("网络已断开，等待 Wi-Fi 恢复…")
+                }
+            }
+        }
+    }
+
+    private func recoverAfterNetworkGap() {
+        guard Date().timeIntervalSince(lastRecoveryAt) > 25, recoveryAttempts < 6 else {
+            statusLabel.text = CWL("网络已恢复，请点「启动 CarPlay」重试")
+            return
+        }
+        lastRecoveryAt = Date()
+        recoveryAttempts += 1
+        log(CWL("自动重连投屏（第 {1} 次）", [String(recoveryAttempts)]))
+        stop(keepVehicleNavigation: true)
+        restartingAutomatically = true
+        toggleReceiver()
+        restartingAutomatically = false
     }
 
     private func watchStartupAddress(_ initialAddress: String) {
