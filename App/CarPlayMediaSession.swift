@@ -70,7 +70,8 @@ final class CarPlayMediaSession {
                     let microphonePort = requestsMicrophone ? (stream["dataPort"] as? NSNumber).flatMap { UInt16(exactly: $0.intValue) }.flatMap { $0 > 0 ? $0 : nil } : nil
                     audio.removeValue(forKey: type.intValue)?.stop()
                     let output = try CarPlayAudio(secret: secret, peerAddress: peerAddress,
-                        connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort)
+                        connectionID: connectionID.uint64Value, format: format, microphonePort: microphonePort,
+                        preferBluetooth: bluetoothAudio)
                     output.onLog = { [weak self] in self?.onLog?($0) }
                     // Keep calls and Siri on the iPhone; only intended playback goes to LAN viewers.
                     if let onBrowserAudio, !requestsMicrophone, !["telephony", "speechrecognition"].contains(audioType) {
