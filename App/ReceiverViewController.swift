@@ -635,6 +635,7 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         ninebotCard.addArrangedSubview(ninebotVehicleButton)
         // Route the BLE scanning/pairing/authentication trail into the app log so it can be
         // diagnosed without guessing from the one-line status label.
+        startMainThreadWatchdog()
         let launchVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
         let launchBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
         log(CWL("CarWithin 启动：版本 {1}（{2}）提交 {3}｜iOS {4}｜机型 {5}",
@@ -2468,11 +2469,34 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
         .urls(for: .documentDirectory, in: .userDomainMask).first?
         .appendingPathComponent("carwithin.log")
     private static let logFileLimit = 4 * 1024 * 1024
+    private static var mainWatchStarted = false
+    private static let logWriteQueue = DispatchQueue(label: "CarWithin.logwrite", qos: .utility)
+    private static var logBuffer = ""
+    private static let logBufferLock = NSLock()
+    private static var logFlushScheduled = false
+
+    /// Buffered, asynchronous file logging: writing synchronously from realtime paths (video stats,
+    /// route changes) could block the main thread and freeze the UI.
     private func appendLogFile(_ line: String) {
-        guard let url = Self.logFileURL, let data = (line + "\n").data(using: .utf8) else { return }
+        Self.logBufferLock.lock()
+        Self.logBuffer += line + "\n"
+        let schedule = !Self.logFlushScheduled
+        if schedule { Self.logFlushScheduled = true }
+        Self.logBufferLock.unlock()
+        guard schedule else { return }
+        Self.logWriteQueue.asyncAfter(deadline: .now() + 0.6) { Self.flushLogBuffer() }
+    }
+
+    private static func flushLogBuffer() {
+        logBufferLock.lock()
+        let chunk = logBuffer
+        logBuffer = ""
+        logFlushScheduled = false
+        logBufferLock.unlock()
+        guard !chunk.isEmpty, let url = logFileURL, let data = chunk.data(using: .utf8) else { return }
         let manager = FileManager.default
         if let attributes = try? manager.attributesOfItem(atPath: url.path),
-           let size = attributes[.size] as? Int, size > Self.logFileLimit {
+           let size = attributes[.size] as? Int, size > logFileLimit {
             let previous = url.deletingLastPathComponent().appendingPathComponent("carwithin.log.1")
             try? manager.removeItem(at: previous)
             try? manager.moveItem(at: url, to: previous)
@@ -2483,6 +2507,30 @@ final class ReceiverViewController: UIViewController, CLLocationManagerDelegate 
             try? data.write(to: url, options: .atomic)
         }
     }
+
+
+    /// Ping the main queue every second; when it stops answering the freeze is recorded straight to
+    /// the file (the normal logging path is itself a suspect and may be blocked).
+    private func startMainThreadWatchdog() {
+        guard !Self.mainWatchStarted else { return }
+        Self.mainWatchStarted = true
+        DispatchQueue.global(qos: .utility).async {
+            while true {
+                Thread.sleep(forTimeInterval: 1.0)
+                let semaphore = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { semaphore.signal() }
+                if semaphore.wait(timeout: .now() + 2.5) == .timedOut {
+                    let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+                    let line = "\(stamp)  主线程阻塞超过 2.5 秒（解码/绘制/日志 I/O 卡住）\n"
+                    if let url = Self.logFileURL, let data = line.data(using: .utf8),
+                       let handle = try? FileHandle(forWritingTo: url) {
+                        handle.seekToEndOfFile(); handle.write(data); try? handle.close()
+                    }
+                }
+            }
+        }
+    }
+
     private func log(_ message: String) {
         let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
         let line = "\(timestamp)  \(message)"
