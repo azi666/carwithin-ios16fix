@@ -125,7 +125,9 @@ final class CarPlayPictureInPicture: NSObject {
             // A system panel (route picker, Control Center) also reports "resign active" for a few
             // seconds. Only warn when the app really left the foreground, otherwise the user sees a
             // failure notice while nothing is wrong.
-            let leftForeground = UIApplication.shared.applicationState != .active
+            // .inactive happens merely by opening a system panel (route picker, Control Center).
+            // Only a real move to the background should raise the warning.
+            let leftForeground = UIApplication.shared.applicationState == .background
             self.clearStartState()
             guard leftForeground else { return }
             self.onLog?(message)
