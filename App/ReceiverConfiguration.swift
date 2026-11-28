@@ -37,6 +37,8 @@ struct ReceiverConfiguration {
     var cfmotoProfile: CfmotoProfile?
     var ninebotAddress: String?
     /// Motorcycle instrument output (v1.0.6 multi-brand support).
+    /// Route decoded CarPlay audio to the paired Bluetooth device when the head unit has no amp.
+    var bluetoothAudio = false
     var motorcycleProfile: MotorcycleProfile?
     var motorcycleAddress: String?
     var eryaVideoPort: UInt16 = 11111
