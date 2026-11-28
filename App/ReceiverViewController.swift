@@ -2807,7 +2807,7 @@ extension ReceiverViewController {
                 ]),
                 SettingsSection(CWL("后台与画中画"), footer: CWL("锁屏前，请在 iPhone「设置 › 通用 › CarPlay › CarWithin」中打开「锁定时允许 CarPlay」。后台运行会增加耗电。画中画仅显示实时画面。离开 App 时自动开启需打开 iPhone「设置 › 通用 › 画中画」中的自动选项。"), [
                     .control(CWL("锁屏与后台继续运行"), icon: ("lock.fill", .systemPurple), keepAliveSwitch),
-                    .control(CWL("画中画开启时机"), icon: ("pip.fill", .systemIndigo), pictureInPictureTiming)
+                    .control(CWL("画中画开启时机"), icon: ("pip.fill", .systemIndigo), pictureInPictureTiming),
                     .control(CWL("连上预设 Wi-Fi 自动启动"), icon: ("wifi", .systemBlue), wifiAutoSwitch)
                 ]),
                 SettingsSection(CWL("支持"), [
